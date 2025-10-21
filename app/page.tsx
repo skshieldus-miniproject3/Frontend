@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation"
 import { RecordingView } from "@/components/recording-view"
 import { Mic, Upload, LogOut, Sparkles, Share2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { validateAudioFile } from "@/lib/file-validation"
 
 type ViewState = "start" | "recording"
 
@@ -36,6 +37,14 @@ export default function Home() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      // 파일 검증
+      const validation = validateAudioFile(file)
+      if (!validation.valid) {
+        alert(`❌ 파일 업로드 실패\n\n${validation.error}`)
+        e.target.value = ''
+        return
+      }
+
       const newMeeting = {
         id: Date.now().toString(),
         title: file.name.replace(/\.[^/.]+$/, ""),
@@ -64,6 +73,7 @@ export default function Home() {
         localStorage.setItem("meetings", JSON.stringify(completedMeetings))
       }, 5000)
 
+      e.target.value = ''
       router.push("/meetings")
     }
   }

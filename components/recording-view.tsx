@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Mic, Square, Download, Upload, Play, Pause } from "lucide-react"
+import { validateBlob } from "@/lib/file-validation"
 
 interface RecordingViewProps {
   onComplete: (blob: Blob) => void
@@ -40,7 +41,21 @@ export function RecordingView({ onComplete }: RecordingViewProps) {
 
   const startRecording = async () => {
     try {
+      // 브라우저 지원 체크
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert("이 브라우저는 오디오 녹음을 지원하지 않습니다. Chrome, Firefox, Safari 최신 버전을 사용해주세요.")
+        return
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      
+      // MediaRecorder 지원 체크
+      if (!window.MediaRecorder) {
+        alert("이 브라우저는 녹음 기능을 지원하지 않습니다.")
+        stream.getTracks().forEach(track => track.stop())
+        return
+      }
+
       const mediaRecorder = new MediaRecorder(stream)
       mediaRecorderRef.current = mediaRecorder
       chunksRef.current = []
@@ -63,9 +78,19 @@ export function RecordingView({ onComplete }: RecordingViewProps) {
       intervalRef.current = setInterval(() => {
         setDuration((prev) => prev + 1)
       }, 1000)
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to start recording:", error)
-      alert("마이크 권한이 필요합니다. 브라우저 설정에서 마이크 권한을 허용해주세요.")
+      
+      // 구체적인 에러 메시지
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        alert("❌ 마이크 권한이 거부되었습니다.\n\n브라우저 설정에서 마이크 권한을 허용해주세요.")
+      } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+        alert("❌ 마이크를 찾을 수 없습니다.\n\n마이크가 연결되어 있는지 확인해주세요.")
+      } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+        alert("❌ 마이크에 접근할 수 없습니다.\n\n다른 프로그램에서 마이크를 사용 중인지 확인해주세요.")
+      } else {
+        alert(`❌ 녹음을 시작할 수 없습니다.\n\n오류: ${error.message || '알 수 없는 오류'}`)
+      }
     }
   }
 
@@ -112,6 +137,14 @@ export function RecordingView({ onComplete }: RecordingViewProps) {
 
   const handleUpload = () => {
     if (!recordedBlob) return
+    
+    // Blob 검증
+    const validation = validateBlob(recordedBlob)
+    if (!validation.valid) {
+      alert(`❌ 업로드 실패\n\n${validation.error}`)
+      return
+    }
+    
     onComplete(recordedBlob)
   }
 

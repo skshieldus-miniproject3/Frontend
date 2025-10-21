@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Mic, Upload, LogOut, Loader2, FileText, Clock, CheckCircle2, ListTodo } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { useMeetings } from "@/hooks/useMeetings"
+import { validateAudioFile } from "@/lib/file-validation"
 
 export default function MeetingsPage() {
   const router = useRouter()
@@ -27,10 +28,21 @@ export default function MeetingsPage() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      // 파일 검증
+      const validation = validateAudioFile(file)
+      if (!validation.valid) {
+        alert(`❌ 파일 업로드 실패\n\n${validation.error}`)
+        e.target.value = '' // 파일 input 초기화
+        return
+      }
+
       try {
         await uploadAudioFile(file)
-      } catch (error) {
+      } catch (error: any) {
         console.error('파일 업로드 실패:', error)
+        alert(`❌ 파일 업로드 실패\n\n${error.message || '알 수 없는 오류가 발생했습니다.'}`)
+      } finally {
+        e.target.value = '' // 파일 input 초기화
       }
     }
   }
