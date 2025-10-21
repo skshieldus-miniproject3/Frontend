@@ -11,15 +11,20 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Mic } from "lucide-react"
 import Link from "next/link"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useAuth } from "@/contexts/AuthContext"
+import { apiClient } from "@/lib/api"
 
 export default function SignupPage() {
   const router = useRouter()
-  const [name, setName] = useState("")
+  const { signup } = useAuth()
+  const [nickname, setNickname] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
+  const [nicknameError, setNicknameError] = useState("")
+  const [isCheckingNickname, setIsCheckingNickname] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -35,27 +40,50 @@ export default function SignupPage() {
       return
     }
 
+    if (nickname.length < 2) {
+      setError("닉네임은 2자 이상이어야 합니다")
+      return
+    }
+
+    if (nicknameError) {
+      setError("닉네임을 확인해주세요")
+      return
+    }
+
     setIsLoading(true)
 
-    setTimeout(() => {
-      // 기존 사용자 목록 가져오기
-      const users = JSON.parse(localStorage.getItem("users") || "[]")
-
-      // 이메일 중복 체크
-      if (users.some((u: any) => u.email === email)) {
-        setError("이미 등록된 이메일입니다")
-        setIsLoading(false)
-        return
-      }
-
-      // 새 사용자 추가
-      users.push({ name, email, password })
-      localStorage.setItem("users", JSON.stringify(users))
-
-      // 로그인 상태로 설정
-      localStorage.setItem("user", JSON.stringify({ name, email }))
+    try {
+      await signup({
+        email,
+        password,
+        nickname
+      })
       router.push("/")
-    }, 1000)
+    } catch (error: any) {
+      setError(error.message || "회원가입에 실패했습니다")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // 닉네임 중복 확인
+  const handleNicknameChange = async (value: string) => {
+    setNickname(value)
+    setNicknameError("")
+    
+    if (value.length >= 2) {
+      setIsCheckingNickname(true)
+      try {
+        const result = await apiClient.checkNickname(value)
+        if (!result.available) {
+          setNicknameError("이미 사용 중인 닉네임입니다")
+        }
+      } catch (error) {
+        console.error('닉네임 중복 확인 실패:', error)
+      } finally {
+        setIsCheckingNickname(false)
+      }
+    }
   }
 
   return (
@@ -86,15 +114,26 @@ export default function SignupPage() {
                 </Alert>
               )}
               <div className="space-y-2">
-                <Label htmlFor="name">이름</Label>
-                <Input
-                  id="name"
-                  type="text"
-                  placeholder="홍길동"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
-                />
+                <Label htmlFor="nickname">닉네임</Label>
+                <div className="relative">
+                  <Input
+                    id="nickname"
+                    type="text"
+                    placeholder="홍길동"
+                    value={nickname}
+                    onChange={(e) => handleNicknameChange(e.target.value)}
+                    required
+                    className={nicknameError ? "border-red-500" : ""}
+                  />
+                  {isCheckingNickname && (
+                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                    </div>
+                  )}
+                </div>
+                {nicknameError && (
+                  <p className="text-sm text-red-500">{nicknameError}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="email">이메일</Label>

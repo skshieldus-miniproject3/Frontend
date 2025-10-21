@@ -1,5 +1,8 @@
 // API 클라이언트 설정
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
+
+// Mock 서버 사용 여부 (환경변수로 제어)
+const USE_MOCK_SERVER = process.env.NEXT_PUBLIC_USE_MOCK === 'true' || true // 강제 Mock 활성화
 
 // API 응답 타입
 interface ApiResponse<T> {
@@ -21,14 +24,17 @@ class ApiClient {
 
   constructor(baseURL: string) {
     this.baseURL = baseURL
-    this.token = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+    this.token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
   }
 
   // 토큰 설정
-  setToken(token: string) {
-    this.token = token
+  setToken(accessToken: string, refreshToken?: string) {
+    this.token = accessToken
     if (typeof window !== 'undefined') {
-      localStorage.setItem('token', token)
+      localStorage.setItem('accessToken', accessToken)
+      if (refreshToken) {
+        localStorage.setItem('refreshToken', refreshToken)
+      }
     }
   }
 
@@ -36,7 +42,8 @@ class ApiClient {
   clearToken() {
     this.token = null
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('token')
+      localStorage.removeItem('accessToken')
+      localStorage.removeItem('refreshToken')
     }
   }
 
@@ -157,10 +164,26 @@ class ApiClient {
       throw error
     }
   }
+
+  // AI 분석 요청
+  async requestAnalysis<T>(meetingId: string, filePath: string): Promise<ApiResponse<T>> {
+    return this.post<T>('/ai/analyze', {
+      meetingId,
+      filePath
+    })
+  }
+
+  // 닉네임 중복 확인
+  async checkNickname(nickname: string): Promise<{ available: boolean }> {
+    const response = await this.get<{ available: boolean }>(`/auth/check-nickname?nickname=${encodeURIComponent(nickname)}`)
+    return response.data
+  }
 }
 
-// API 클라이언트 인스턴스 생성
-export const apiClient = new ApiClient(API_BASE_URL)
+// API 클라이언트 인스턴스 생성 (Mock 서버 또는 실제 서버)
+import { mockApiClient } from './mock-server'
+
+export const apiClient = USE_MOCK_SERVER ? mockApiClient : new ApiClient(API_BASE_URL)
 
 // API 에러 타입 export
 export type { ApiError, ApiResponse }

@@ -1,10 +1,9 @@
-// 사용자 관련 타입
+// 사용자 관련 타입 (API 스펙에 맞게 수정)
 export interface User {
-  id: string
-  name: string
+  userId: string
   email: string
+  nickname: string
   createdAt: string
-  updatedAt: string
 }
 
 export interface LoginRequest {
@@ -13,57 +12,71 @@ export interface LoginRequest {
 }
 
 export interface LoginResponse {
-  user: User
-  token: string
+  accessToken: string
+  refreshToken: string
 }
 
 export interface SignupRequest {
-  name: string
   email: string
   password: string
+  nickname: string
 }
 
 export interface SignupResponse {
-  user: User
-  token: string
+  message: string
 }
 
-// 회의 관련 타입
+export interface Me {
+  userId: string
+  email: string
+  nickname: string
+  createdAt: string
+}
+
+// 회의 관련 타입 (API 스펙에 맞게 수정)
 export interface Meeting {
-  id: string
+  meetingId: string
   title: string
   date: string
-  status: 'processing' | 'completed' | 'failed'
+  status: 'uploaded' | 'processing' | 'completed'
   summary?: string
-  actionCount?: number
-  duration?: number
-  audioUrl?: string
-  transcript?: string
+  keywords?: string[]
+  speakers?: Speaker[]
+  filePath?: string
   createdAt: string
-  updatedAt: string
-  userId: string
+}
+
+export interface Speaker {
+  speakerId: string
+  segments: Segment[]
+}
+
+export interface Segment {
+  start: number
+  end: number
+  text: string
 }
 
 export interface CreateMeetingRequest {
   title: string
-  audioFile?: File
-  audioBlob?: Blob
+  date: string
+  file: File
 }
 
 export interface CreateMeetingResponse {
-  meeting: Meeting
+  meetingId: string
+  status: 'uploaded'
+  message: string
 }
 
 export interface UpdateMeetingRequest {
   title?: string
   summary?: string
-  actionCount?: number
-  duration?: number
-  transcript?: string
+  keywords?: string[]
 }
 
 export interface UpdateMeetingResponse {
-  meeting: Meeting
+  message: string
 }
 
 // API 응답 타입
@@ -140,4 +153,21 @@ export interface MeetingStats {
   failedMeetings: number
   totalActionItems: number
   completedActionItems: number
+}
+
+// AI 분석 관련 타입
+export interface AnalyzeRequest {
+  meetingId: string
+  filePath: string
+}
+
+export interface AnalyzeAccepted {
+  status: 'processing'
+}
+
+export interface AiCallbackPayload {
+  status: 'completed'
+  summary: string
+  keywords: string[]
+  speakers: Speaker[]
 }

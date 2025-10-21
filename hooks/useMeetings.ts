@@ -42,44 +42,14 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
       setIsLoading(true)
       setError(null)
 
-      // 서버 연결 시
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        const params = new URLSearchParams()
-        if (pagination?.page) params.append('page', pagination.page.toString())
-        if (pagination?.limit) params.append('limit', pagination.limit.toString())
-        if (pagination?.sortBy) params.append('sortBy', pagination.sortBy)
-        if (pagination?.sortOrder) params.append('sortOrder', pagination.sortOrder)
+      const params = new URLSearchParams()
+      if (pagination?.page) params.append('page', pagination.page.toString())
+      if (pagination?.limit) params.append('size', pagination.limit.toString())
+      if (pagination?.sortBy) params.append('sortBy', pagination.sortBy)
+      if (pagination?.sortOrder) params.append('sortOrder', pagination.sortOrder)
 
-        const response = await apiClient.get<PaginatedResponse<Meeting>>(`/meetings?${params}`)
-        setMeetings(response.data.data)
-      } else {
-        // 개발용 로컬 로직 (기존 코드 유지)
-        const meetingsStr = localStorage.getItem('meetings')
-        if (meetingsStr) {
-          const loadedMeetings = JSON.parse(meetingsStr)
-          setMeetings(loadedMeetings)
-
-          // 처리 중인 회의 시뮬레이션
-          const processingMeetings = loadedMeetings.filter((m: Meeting) => m.status === 'processing')
-          if (processingMeetings.length > 0) {
-            setTimeout(() => {
-              const updatedMeetings = loadedMeetings.map((m: Meeting) =>
-                m.status === 'processing' 
-                  ? { 
-                      ...m, 
-                      status: 'completed' as const,
-                      summary: '회의 내용이 성공적으로 분석되었습니다.',
-                      actionCount: 4,
-                      duration: 180,
-                    } 
-                  : m
-              )
-              setMeetings(updatedMeetings)
-              localStorage.setItem('meetings', JSON.stringify(updatedMeetings))
-            }, 5000)
-          }
-        }
-      }
+      const response = await apiClient.get<{ content: Meeting[], page: number, size: number, totalPages: number }>(`/meetings?${params}`)
+      setMeetings(response.data.content)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '회의 목록을 가져오는데 실패했습니다'
       setError(errorMessage)
@@ -89,87 +59,63 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
     }
   }, [pagination])
 
-  // 통계 정보 가져오기
+  // 통계 정보 가져오기 (API에 통계 엔드포인트가 없으므로 로컬 계산)
   const fetchStats = useCallback(async () => {
     try {
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        const response = await apiClient.get<MeetingStats>('/meetings/stats')
-        setStats(response.data)
-      } else {
-        // 로컬 통계 계산
-        const meetingsStr = localStorage.getItem('meetings')
-        if (meetingsStr) {
-          const loadedMeetings = JSON.parse(meetingsStr)
-          const totalMeetings = loadedMeetings.length
-          const completedMeetings = loadedMeetings.filter((m: Meeting) => m.status === 'completed').length
-          const processingMeetings = loadedMeetings.filter((m: Meeting) => m.status === 'processing').length
-          const failedMeetings = loadedMeetings.filter((m: Meeting) => m.status === 'failed').length
-          const totalDuration = loadedMeetings.reduce((sum: number, m: Meeting) => sum + (m.duration || 0), 0)
-          const totalActionItems = loadedMeetings.reduce((sum: number, m: Meeting) => sum + (m.actionCount || 0), 0)
+      const totalMeetings = meetings.length
+      const completedMeetings = meetings.filter((m: Meeting) => m.status === 'completed').length
+      const processingMeetings = meetings.filter((m: Meeting) => m.status === 'processing').length
+      const failedMeetings = meetings.filter((m: Meeting) => m.status === 'failed').length
+      const totalDuration = meetings.reduce((sum: number, m: Meeting) => sum + (m.duration || 0), 0)
+      const totalActionItems = meetings.reduce((sum: number, m: Meeting) => sum + (m.actionCount || 0), 0)
 
-          setStats({
-            totalMeetings,
-            totalDuration,
-            averageDuration: totalMeetings > 0 ? totalDuration / totalMeetings : 0,
-            completedMeetings,
-            processingMeetings,
-            failedMeetings,
-            totalActionItems,
-            completedActionItems: 0, // 로컬에서는 추적하지 않음
-          })
-        }
-      }
+      setStats({
+        totalMeetings,
+        totalDuration,
+        averageDuration: totalMeetings > 0 ? totalDuration / totalMeetings : 0,
+        completedMeetings,
+        processingMeetings,
+        failedMeetings,
+        totalActionItems,
+        completedActionItems: 0,
+      })
     } catch (err) {
       console.error('통계 정보 가져오기 실패:', err)
     }
-  }, [])
+  }, [meetings])
 
-  // 회의 생성
+  // 회의 생성 (파일 업로드)
   const createMeeting = useCallback(async (data: CreateMeetingRequest): Promise<Meeting> => {
     try {
       setError(null)
 
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        const response = await apiClient.post<{ meeting: Meeting }>('/meetings', data)
-        const newMeeting = response.data.meeting
-        setMeetings(prev => [newMeeting, ...prev])
-        return newMeeting
-      } else {
-        // 로컬 로직
-        const newMeeting: Meeting = {
-          id: Date.now().toString(),
-          title: data.title,
-          date: new Date().toISOString(),
-          status: 'processing',
-          userId: '1', // 로컬에서는 고정값
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        }
+      const formData = new FormData()
+      formData.append('title', data.title)
+      formData.append('date', data.date)
+      formData.append('file', data.file)
 
-        const meetingsStr = localStorage.getItem('meetings')
-        const meetings = meetingsStr ? JSON.parse(meetingsStr) : []
-        const updatedMeetings = [newMeeting, ...meetings]
-        localStorage.setItem('meetings', JSON.stringify(updatedMeetings))
-        setMeetings(updatedMeetings)
-
-        // 처리 완료 시뮬레이션
-        setTimeout(() => {
-          const completedMeeting = {
-            ...newMeeting,
-            status: 'completed' as const,
-            summary: '회의 내용이 성공적으로 분석되었습니다.',
-            actionCount: 4,
-            duration: 180,
-          }
-          const finalMeetings = updatedMeetings.map((m: Meeting) =>
-            m.id === newMeeting.id ? completedMeeting : m
-          )
-          localStorage.setItem('meetings', JSON.stringify(finalMeetings))
-          setMeetings(finalMeetings)
-        }, 5000)
-
-        return newMeeting
+      const response = await apiClient.post<CreateMeetingResponse>('/meetings', formData)
+      
+      // 새로 생성된 회의 정보로 Meeting 객체 생성
+      const newMeeting: Meeting = {
+        meetingId: response.data.meetingId,
+        title: data.title,
+        date: data.date,
+        status: response.data.status,
+        createdAt: new Date().toISOString(),
       }
+      
+      setMeetings(prev => [newMeeting, ...prev])
+      
+      // AI 분석 요청 (백그라운드에서 실행)
+      try {
+        await apiClient.requestAnalysis<{ status: 'processing' }>(response.data.meetingId, '')
+      } catch (analysisError) {
+        console.warn('AI 분석 요청 실패:', analysisError)
+        // 분석 요청 실패해도 회의 생성은 성공으로 처리
+      }
+      
+      return newMeeting
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '회의 생성에 실패했습니다'
       setError(errorMessage)
@@ -182,22 +128,14 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
     try {
       setError(null)
 
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        const response = await apiClient.put<{ meeting: Meeting }>(`/meetings/${id}`, data)
-        const updatedMeeting = response.data.meeting
-        setMeetings(prev => prev.map(m => m.id === id ? updatedMeeting : m))
-        return updatedMeeting
-      } else {
-        // 로컬 로직
-        const meetingsStr = localStorage.getItem('meetings')
-        const meetings = meetingsStr ? JSON.parse(meetingsStr) : []
-        const updatedMeetings = meetings.map((m: Meeting) =>
-          m.id === id ? { ...m, ...data, updatedAt: new Date().toISOString() } : m
-        )
-        localStorage.setItem('meetings', JSON.stringify(updatedMeetings))
-        setMeetings(updatedMeetings)
-        return updatedMeetings.find(m => m.id === id)!
-      }
+      const response = await apiClient.put<UpdateMeetingResponse>(`/meetings/${id}`, data)
+      
+      // 업데이트된 회의 정보 가져오기
+      const meetingResponse = await apiClient.get<Meeting>(`/meetings/${id}`)
+      const updatedMeeting = meetingResponse.data
+      
+      setMeetings(prev => prev.map(m => m.meetingId === id ? updatedMeeting : m))
+      return updatedMeeting
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '회의 업데이트에 실패했습니다'
       setError(errorMessage)
@@ -210,17 +148,8 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
     try {
       setError(null)
 
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        await apiClient.delete(`/meetings/${id}`)
-        setMeetings(prev => prev.filter(m => m.id !== id))
-      } else {
-        // 로컬 로직
-        const meetingsStr = localStorage.getItem('meetings')
-        const meetings = meetingsStr ? JSON.parse(meetingsStr) : []
-        const updatedMeetings = meetings.filter((m: Meeting) => m.id !== id)
-        localStorage.setItem('meetings', JSON.stringify(updatedMeetings))
-        setMeetings(updatedMeetings)
-      }
+      await apiClient.delete(`/meetings/${id}`)
+      setMeetings(prev => prev.filter(m => m.meetingId !== id))
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '회의 삭제에 실패했습니다'
       setError(errorMessage)
@@ -233,16 +162,14 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
     try {
       setError(null)
 
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        const response = await apiClient.uploadFile<{ meeting: Meeting }>('/meetings/upload', file)
-        const newMeeting = response.data.meeting
-        setMeetings(prev => [newMeeting, ...prev])
-        return newMeeting
-      } else {
-        // 로컬 로직
-        const title = file.name.replace(/\.[^/.]+$/, "")
-        return createMeeting({ title, audioFile: file })
-      }
+      const title = file.name.replace(/\.[^/.]+$/, "")
+      const date = new Date().toISOString()
+      
+      return createMeeting({ 
+        title, 
+        date, 
+        file 
+      })
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '파일 업로드에 실패했습니다'
       setError(errorMessage)
@@ -255,20 +182,21 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
     try {
       setError(null)
 
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        // Blob을 File로 변환
-        const file = new File([blob], `${title}.webm`, { type: blob.type })
-        return uploadAudioFile(file)
-      } else {
-        // 로컬 로직
-        return createMeeting({ title, audioBlob: blob })
-      }
+      // Blob을 File로 변환
+      const file = new File([blob], `${title}.webm`, { type: blob.type })
+      const date = new Date().toISOString()
+      
+      return createMeeting({ 
+        title, 
+        date, 
+        file 
+      })
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '오디오 업로드에 실패했습니다'
       setError(errorMessage)
       throw err
     }
-  }, [createMeeting, uploadAudioFile])
+  }, [createMeeting])
 
   // 데이터 새로고침
   const refreshMeetings = useCallback(async () => {

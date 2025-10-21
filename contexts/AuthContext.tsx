@@ -32,8 +32,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        const token = localStorage.getItem('token')
-        if (token) {
+        const accessToken = localStorage.getItem('accessToken')
+        if (accessToken) {
           // 토큰이 있으면 사용자 정보 가져오기
           await refreshUser()
         }
@@ -53,11 +53,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // 사용자 정보 새로고침
   const refreshUser = async () => {
     try {
-      const response = await apiClient.get<{ user: User }>('/auth/me')
-      setUser(response.data.user)
+      const response = await apiClient.get<User>('/auth/me')
+      setUser(response.data)
       
       // localStorage에도 저장 (fallback용)
-      localStorage.setItem('user', JSON.stringify(response.data.user))
+      localStorage.setItem('user', JSON.stringify(response.data))
     } catch (error) {
       console.error('사용자 정보 새로고침 실패:', error)
       throw error
@@ -69,45 +69,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       setIsLoading(true)
       
-      // 서버 연결 시
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        const response = await apiClient.post<LoginResponse>('/auth/login', credentials)
-        apiClient.setToken(response.data.token)
-        setUser(response.data.user)
-        localStorage.setItem('user', JSON.stringify(response.data.user))
-      } else {
-        // 개발용 로컬 로직 (기존 코드 유지)
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        
-        if (credentials.email === "test@meeting.com" && credentials.password === "test1234") {
-          const mockUser: User = {
-            id: '1',
-            name: 'Test User',
-            email: credentials.email,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          }
-          setUser(mockUser)
-          localStorage.setItem('user', JSON.stringify(mockUser))
-        } else {
-          const users = JSON.parse(localStorage.getItem("users") || "[]")
-          const user = users.find((u: any) => u.email === credentials.email && u.password === credentials.password)
-          
-          if (user) {
-            const mockUser: User = {
-              id: Date.now().toString(),
-              name: user.name,
-              email: user.email,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            }
-            setUser(mockUser)
-            localStorage.setItem('user', JSON.stringify(mockUser))
-          } else {
-            throw new Error('이메일 또는 비밀번호가 올바르지 않습니다')
-          }
-        }
-      }
+      const response = await apiClient.post<LoginResponse>('/auth/login', credentials)
+      apiClient.setToken(response.data.accessToken, response.data.refreshToken)
+      
+      // 사용자 정보 가져오기
+      await refreshUser()
     } catch (error) {
       console.error('로그인 실패:', error)
       throw error
@@ -121,35 +87,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       setIsLoading(true)
       
-      // 서버 연결 시
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        const response = await apiClient.post<SignupResponse>('/auth/signup', userData)
-        apiClient.setToken(response.data.token)
-        setUser(response.data.user)
-        localStorage.setItem('user', JSON.stringify(response.data.user))
-      } else {
-        // 개발용 로컬 로직 (기존 코드 유지)
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        
-        const users = JSON.parse(localStorage.getItem("users") || "[]")
-        
-        if (users.some((u: any) => u.email === userData.email)) {
-          throw new Error('이미 등록된 이메일입니다')
-        }
-        
-        users.push({ name: userData.name, email: userData.email, password: userData.password })
-        localStorage.setItem("users", JSON.stringify(users))
-        
-        const mockUser: User = {
-          id: Date.now().toString(),
-          name: userData.name,
-          email: userData.email,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        }
-        setUser(mockUser)
-        localStorage.setItem('user', JSON.stringify(mockUser))
-      }
+      const response = await apiClient.post<SignupResponse>('/auth/signup', userData)
+      
+      // 회원가입 후 자동 로그인
+      await login({
+        email: userData.email,
+        password: userData.password
+      })
     } catch (error) {
       console.error('회원가입 실패:', error)
       throw error
@@ -159,12 +103,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }
 
   // 로그아웃
-  const logout = () => {
-    setUser(null)
-    apiClient.clearToken()
-    localStorage.removeItem('user')
-    localStorage.removeItem('token')
-    router.push('/login')
+  const logout = async () => {
+    try {
+      // 서버에 로그아웃 요청
+      await apiClient.post('/auth/logout')
+    } catch (error) {
+      console.error('로그아웃 요청 실패:', error)
+    } finally {
+      setUser(null)
+      apiClient.clearToken()
+      localStorage.removeItem('user')
+      router.push('/login')
+    }
   }
 
   const value: AuthContextType = {

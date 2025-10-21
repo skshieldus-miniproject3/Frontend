@@ -8,89 +8,30 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Mic, Upload, LogOut, Loader2, FileText, Clock, CheckCircle2, ListTodo } from "lucide-react"
-
-interface Meeting {
-  id: string
-  title: string
-  date: string
-  status: "processing" | "completed"
-  duration?: number
-  summary?: string
-  actionCount?: number
-}
+import { useAuth } from "@/contexts/AuthContext"
+import { useMeetings } from "@/hooks/useMeetings"
 
 export default function MeetingsPage() {
   const router = useRouter()
-  const [user, setUser] = useState<{ name?: string; email: string } | null>(null)
-  const [meetings, setMeetings] = useState<Meeting[]>([])
-
-  useEffect(() => {
-    const userStr = localStorage.getItem("user")
-    if (!userStr) {
-      router.push("/login")
-    } else {
-      setUser(JSON.parse(userStr))
-    }
-
-    // Load meetings from localStorage
-    const meetingsStr = localStorage.getItem("meetings")
-    if (meetingsStr) {
-      const loadedMeetings = JSON.parse(meetingsStr)
-      setMeetings(loadedMeetings)
-
-      // Simulate processing completion for processing meetings
-      const processingMeetings = loadedMeetings.filter((m: Meeting) => m.status === "processing")
-      if (processingMeetings.length > 0) {
-        setTimeout(() => {
-          const updatedMeetings = loadedMeetings.map((m: Meeting) =>
-            m.status === "processing" ? { ...m, status: "completed" } : m,
-          )
-          setMeetings(updatedMeetings)
-          localStorage.setItem("meetings", JSON.stringify(updatedMeetings))
-        }, 5000)
-      }
-    }
-  }, [router])
+  const { user, logout } = useAuth()
+  const { meetings, isLoading, uploadAudioFile } = useMeetings()
 
   const handleLogout = () => {
-    localStorage.removeItem("user")
-    router.push("/login")
+    logout()
   }
 
   const handleNewMeeting = () => {
     router.push("/")
   }
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      const newMeeting: Meeting = {
-        id: Date.now().toString(),
-        title: file.name.replace(/\.[^/.]+$/, ""),
-        date: new Date().toISOString(),
-        status: "processing",
+      try {
+        await uploadAudioFile(file)
+      } catch (error) {
+        console.error('파일 업로드 실패:', error)
       }
-
-      const updatedMeetings = [newMeeting, ...meetings]
-      setMeetings(updatedMeetings)
-      localStorage.setItem("meetings", JSON.stringify(updatedMeetings))
-
-      // Simulate processing
-      setTimeout(() => {
-        const completedMeetings = updatedMeetings.map((m) =>
-          m.id === newMeeting.id
-            ? {
-                ...m,
-                status: "completed" as const,
-                summary: "회의 내용이 성공적으로 분석되었습니다.",
-                actionCount: 4,
-                duration: 180,
-              }
-            : m,
-        )
-        setMeetings(completedMeetings)
-        localStorage.setItem("meetings", JSON.stringify(completedMeetings))
-      }, 5000)
     }
   }
 
@@ -120,7 +61,7 @@ export default function MeetingsPage() {
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right hidden sm:block">
-              <p className="text-sm font-semibold">{user.name || user.email}</p>
+              <p className="text-sm font-semibold">{user.nickname || user.email}</p>
               <p className="text-xs text-muted-foreground">{user.email}</p>
             </div>
             <Button variant="outline" size="sm" onClick={handleLogout} className="font-medium bg-transparent">
@@ -163,7 +104,19 @@ export default function MeetingsPage() {
           </div>
 
           {/* Meetings List */}
-          {meetings.length === 0 ? (
+          {isLoading ? (
+            <Card className="p-16 text-center shadow-md">
+              <div className="space-y-6">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-primary/5 mx-auto flex items-center justify-center">
+                  <Loader2 className="w-10 h-10 text-primary animate-spin" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold mb-3">회의록을 불러오는 중...</h3>
+                  <p className="text-muted-foreground text-lg">잠시만 기다려주세요</p>
+                </div>
+              </div>
+            </Card>
+          ) : meetings.length === 0 ? (
             <Card className="p-16 text-center shadow-md">
               <div className="space-y-6">
                 <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-primary/5 mx-auto flex items-center justify-center">
@@ -193,9 +146,9 @@ export default function MeetingsPage() {
             <div className="space-y-4">
               {meetings.map((meeting) => (
                 <Card
-                  key={meeting.id}
+                  key={meeting.meetingId}
                   className={`p-8 transition-all shadow-sm ${meeting.status === "completed" ? "cursor-pointer card-hover border-border/50" : "border-border/50"}`}
-                  onClick={() => meeting.status === "completed" && handleMeetingClick(meeting.id)}
+                  onClick={() => meeting.status === "completed" && handleMeetingClick(meeting.meetingId)}
                 >
                   <div className="flex items-start justify-between gap-6">
                     <div className="flex-1 space-y-4">
@@ -207,12 +160,16 @@ export default function MeetingsPage() {
                             className="flex items-center gap-2 px-3 py-1 text-sm font-semibold"
                           >
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            생성 중
+                            분석 중
                           </Badge>
-                        ) : (
+                        ) : meeting.status === "completed" ? (
                           <Badge className="flex items-center gap-2 px-3 py-1 text-sm font-semibold gradient-primary border-0">
                             <CheckCircle2 className="w-3.5 h-3.5" />
                             완료
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="flex items-center gap-2 px-3 py-1 text-sm font-semibold">
+                            업로드됨
                           </Badge>
                         )}
                       </div>
@@ -230,15 +187,9 @@ export default function MeetingsPage() {
                             })}
                           </span>
                         </div>
-                        {meeting.duration && (
+                        {meeting.keywords && meeting.keywords.length > 0 && (
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold">{Math.floor(meeting.duration / 60)}분</span>
-                          </div>
-                        )}
-                        {meeting.actionCount && (
-                          <div className="flex items-center gap-2">
-                            <ListTodo className="w-4 h-4" />
-                            <span className="font-semibold">액션아이템 {meeting.actionCount}개</span>
+                            <span className="font-semibold">키워드 {meeting.keywords.length}개</span>
                           </div>
                         )}
                       </div>
@@ -246,20 +197,18 @@ export default function MeetingsPage() {
                       {meeting.status === "processing" ? (
                         <div className="space-y-3 pt-2">
                           <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground font-medium">음성을 텍스트로 변환 중...</span>
+                            <span className="text-muted-foreground font-medium">AI가 회의 내용을 분석 중...</span>
                             <span className="text-primary font-bold">진행 중</span>
                           </div>
                           <div className="h-2.5 bg-secondary rounded-full overflow-hidden">
                             <div className="h-full gradient-primary rounded-full animate-pulse w-2/3 shadow-sm" />
                           </div>
                         </div>
-                      ) : (
-                        meeting.summary && (
-                          <p className="text-sm text-muted-foreground text-pretty leading-relaxed bg-muted/50 p-4 rounded-lg">
-                            {meeting.summary}
-                          </p>
-                        )
-                      )}
+                      ) : meeting.status === "completed" && meeting.summary ? (
+                        <p className="text-sm text-muted-foreground text-pretty leading-relaxed bg-muted/50 p-4 rounded-lg">
+                          {meeting.summary}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                 </Card>

@@ -51,7 +51,7 @@ export function RecordingView({ onComplete }: RecordingViewProps) {
         setDuration((prev) => prev + 1)
       }, 1000)
     } catch (error) {
-      console.error("[v0] Failed to start recording:", error)
+      console.error("Failed to start recording:", error)
       alert("마이크 권한이 필요합니다. 브라우저 설정에서 마이크 권한을 허용해주세요.")
     }
   }

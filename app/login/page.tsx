@@ -11,9 +11,11 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Mic } from "lucide-react"
 import Link from "next/link"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useAuth } from "@/contexts/AuthContext"
 
 export default function LoginPage() {
   const router = useRouter()
+  const { login } = useAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -24,31 +26,19 @@ export default function LoginPage() {
     setIsLoading(true)
     setError("")
 
-    setTimeout(() => {
-      // 테스트 계정 확인
-      if (email === "test@meeting.com" && password === "test1234") {
-        localStorage.setItem("user", JSON.stringify({ email }))
-        router.push("/")
-      } else {
-        // 회원가입된 계정 확인
-        const users = JSON.parse(localStorage.getItem("users") || "[]")
-        const user = users.find((u: any) => u.email === email && u.password === password)
-
-        if (user) {
-          localStorage.setItem("user", JSON.stringify({ email }))
-          router.push("/")
-        } else {
-          setError("이메일 또는 비밀번호가 올바르지 않습니다")
-          setIsLoading(false)
-        }
-      }
-    }, 1000)
+    try {
+      await login({
+        email,
+        password
+      })
+      router.push("/")
+    } catch (error: any) {
+      setError(error.message || "로그인에 실패했습니다")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleTestLogin = () => {
-    setEmail("test@meeting.com")
-    setPassword("test1234")
-  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -64,19 +54,6 @@ export default function LoginPage() {
           <p className="text-sm text-muted-foreground">회의를 자동으로 기록하고 정리합니다</p>
         </div>
 
-        <Alert>
-          <AlertDescription className="text-sm">
-            <strong>테스트 계정:</strong>
-            <br />
-            이메일: test@meeting.com
-            <br />
-            비밀번호: test1234
-            <br />
-            <Button variant="link" className="h-auto p-0 text-xs mt-1" onClick={handleTestLogin} type="button">
-              테스트 계정으로 자동 입력
-            </Button>
-          </AlertDescription>
-        </Alert>
 
         {/* Login Form */}
         <Card>

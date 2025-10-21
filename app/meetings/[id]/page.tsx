@@ -7,6 +7,9 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Download, ArrowLeft, CheckCircle2, Clock, User, Mic, LogOut } from "lucide-react"
+import { useAuth } from "@/contexts/AuthContext"
+import { apiClient } from "@/lib/api"
+import type { Meeting } from "@/types/api"
 
 // Mock data
 const mockResult = {
@@ -69,31 +72,29 @@ const mockResult = {
 export default function MeetingDetailPage() {
   const router = useRouter()
   const params = useParams()
-  const [user, setUser] = useState<{ name?: string; email: string } | null>(null)
-  const [meeting, setMeeting] = useState<any>(null)
+  const { user, logout } = useAuth()
+  const [meeting, setMeeting] = useState<Meeting | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    const userStr = localStorage.getItem("user")
-    if (!userStr) {
-      router.push("/login")
-    } else {
-      setUser(JSON.parse(userStr))
-    }
-
-    // Load specific meeting
-    const meetingsStr = localStorage.getItem("meetings")
-    if (meetingsStr) {
-      const meetings = JSON.parse(meetingsStr)
-      const foundMeeting = meetings.find((m: any) => m.id === params.id)
-      if (foundMeeting) {
-        setMeeting(foundMeeting)
+    const fetchMeeting = async () => {
+      try {
+        const response = await apiClient.get<Meeting>(`/meetings/${params.id}`)
+        setMeeting(response.data)
+      } catch (error) {
+        console.error('회의록 상세 정보 가져오기 실패:', error)
+      } finally {
+        setIsLoading(false)
       }
     }
-  }, [router, params.id])
+
+    if (params.id) {
+      fetchMeeting()
+    }
+  }, [params.id])
 
   const handleLogout = () => {
-    localStorage.removeItem("user")
-    router.push("/login")
+    logout()
   }
 
   const handleDownload = (format: "txt" | "md" | "json") => {
@@ -141,8 +142,33 @@ export default function MeetingDetailPage() {
     }
   }
 
-  if (!user || !meeting) {
+  if (!user) {
     return null
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto"></div>
+          <p className="text-muted-foreground">회의록을 불러오는 중...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!meeting) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <h2 className="text-2xl font-bold">회의록을 찾을 수 없습니다</h2>
+          <p className="text-muted-foreground">요청하신 회의록이 존재하지 않습니다.</p>
+          <Button onClick={() => router.push("/meetings")}>
+            목록으로 돌아가기
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -161,7 +187,7 @@ export default function MeetingDetailPage() {
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right hidden sm:block">
-              <p className="text-sm font-medium">{user.name || user.email}</p>
+              <p className="text-sm font-medium">{user.nickname || user.email}</p>
               <p className="text-xs text-muted-foreground">{user.email}</p>
             </div>
             <Button variant="outline" size="sm" onClick={handleLogout}>
@@ -214,7 +240,9 @@ export default function MeetingDetailPage() {
           {/* Summary Card */}
           <Card className="p-6">
             <h3 className="text-lg font-semibold mb-3">회의 요약</h3>
-            <p className="text-muted-foreground leading-relaxed text-pretty">{mockResult.summary}</p>
+            <p className="text-muted-foreground leading-relaxed text-pretty">
+              {meeting.summary || "아직 분석이 완료되지 않았습니다."}
+            </p>
           </Card>
 
           {/* Tabs */}
@@ -226,62 +254,51 @@ export default function MeetingDetailPage() {
             </TabsList>
 
             <TabsContent value="decisions" className="space-y-4">
-              {mockResult.decisions.map((decision, index) => (
-                <Card key={index} className="p-6">
-                  <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <CheckCircle2 className="w-5 h-5 text-primary" />
-                    </div>
-                    <div className="flex-1 space-y-2">
-                      <h4 className="font-semibold text-lg">{decision.title}</h4>
-                      <p className="text-muted-foreground text-sm">{decision.rationale}</p>
-                      <p className="text-xs text-muted-foreground">출처: {decision.source}</p>
-                    </div>
+              {meeting.keywords && meeting.keywords.length > 0 ? (
+                <div className="space-y-4">
+                  <h4 className="font-semibold text-lg">주요 키워드</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {meeting.keywords.map((keyword, index) => (
+                      <Badge key={index} variant="secondary" className="px-3 py-1">
+                        {keyword}
+                      </Badge>
+                    ))}
                   </div>
+                </div>
+              ) : (
+                <Card className="p-6 text-center">
+                  <p className="text-muted-foreground">아직 분석이 완료되지 않았습니다.</p>
                 </Card>
-              ))}
+              )}
             </TabsContent>
 
             <TabsContent value="actions" className="space-y-4">
-              <div className="grid gap-4">
-                {mockResult.actionItems.map((item) => (
-                  <Card key={item.id} className="p-6">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 space-y-3">
-                        <div className="flex items-center gap-3">
-                          <h4 className="font-semibold text-lg">{item.title}</h4>
-                          <Badge variant={getPriorityColor(item.priority)}>{item.priority}</Badge>
-                        </div>
-                        <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                          <div className="flex items-center gap-2">
-                            <User className="w-4 h-4" />
-                            <span>{item.assignee}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Clock className="w-4 h-4" />
-                            <span>{item.dueDate}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <Button variant="outline" size="sm">
-                        완료 표시
-                      </Button>
-                    </div>
-                  </Card>
-                ))}
-              </div>
+              <Card className="p-6 text-center">
+                <p className="text-muted-foreground">액션아이템 기능은 추후 업데이트 예정입니다.</p>
+              </Card>
             </TabsContent>
 
             <TabsContent value="transcript">
               <Card className="p-6">
                 <h3 className="text-lg font-semibold mb-4">회의 원문 (STT)</h3>
-                <div className="space-y-2 font-mono text-sm">
-                  {mockResult.transcript.split("\n").map((line, index) => (
-                    <p key={index} className="text-muted-foreground leading-relaxed">
-                      {line}
-                    </p>
-                  ))}
-                </div>
+                {meeting.speakers && meeting.speakers.length > 0 ? (
+                  <div className="space-y-4">
+                    {meeting.speakers.map((speaker, speakerIndex) => (
+                      <div key={speakerIndex} className="space-y-2">
+                        <h4 className="font-semibold text-sm text-primary">화자 {speaker.speakerId}</h4>
+                        <div className="space-y-1 font-mono text-sm">
+                          {speaker.segments.map((segment, segmentIndex) => (
+                            <p key={segmentIndex} className="text-muted-foreground leading-relaxed">
+                              [{Math.floor(segment.start / 60)}:{String(Math.floor(segment.start % 60)).padStart(2, '0')}] {segment.text}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">아직 분석이 완료되지 않았습니다.</p>
+                )}
               </Card>
             </TabsContent>
           </Tabs>
