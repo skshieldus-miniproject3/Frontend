@@ -39,14 +39,8 @@ export async function POST(request: NextRequest) {
     // 개발용 모의 응답
     if (email === 'test@meeting.com' && password === 'test1234') {
       const mockResponse: LoginResponse = {
-        user: {
-          id: '1',
-          name: 'Test User',
-          email: email,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        token: 'mock-jwt-token-' + Date.now(),
+        accessToken: 'mock-access-token-' + Date.now(),
+        refreshToken: 'mock-refresh-token-' + Date.now(),
       }
 
       return NextResponse.json({ success: true, data: mockResponse })

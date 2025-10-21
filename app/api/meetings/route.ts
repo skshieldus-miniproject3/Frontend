@@ -40,39 +40,31 @@ export async function GET(request: NextRequest) {
     // 개발용 모의 응답
     const mockMeetings: Meeting[] = [
       {
-        id: '1',
+        meetingId: '1',
         title: '프로젝트 기획 회의',
         date: new Date(Date.now() - 86400000).toISOString(),
         status: 'completed',
         summary: '프로젝트 일정과 역할 분담에 대해 논의했습니다.',
-        actionCount: 3,
-        duration: 1800,
-        userId: '1',
+        keywords: ['프로젝트', '일정', '역할분담'],
         createdAt: new Date(Date.now() - 86400000).toISOString(),
-        updatedAt: new Date(Date.now() - 86400000).toISOString(),
       },
       {
-        id: '2',
+        meetingId: '2',
         title: '디자인 리뷰',
         date: new Date(Date.now() - 172800000).toISOString(),
         status: 'processing',
-        userId: '1',
         createdAt: new Date(Date.now() - 172800000).toISOString(),
-        updatedAt: new Date(Date.now() - 172800000).toISOString(),
       },
     ]
 
-    const paginatedResponse: PaginatedResponse<Meeting> = {
-      data: mockMeetings,
-      pagination: {
-        page,
-        limit,
-        total: mockMeetings.length,
-        totalPages: Math.ceil(mockMeetings.length / limit),
-      },
+    const response = {
+      content: mockMeetings,
+      page,
+      size: limit,
+      totalPages: Math.ceil(mockMeetings.length / limit),
     }
 
-    return NextResponse.json({ success: true, data: paginatedResponse })
+    return NextResponse.json({ success: true, data: response })
   } catch (error) {
     console.error('Meetings GET API error:', error)
     return NextResponse.json(
@@ -120,18 +112,20 @@ export async function POST(request: NextRequest) {
 
     // 개발용 모의 응답
     const newMeeting: Meeting = {
-      id: Date.now().toString(),
+      meetingId: Date.now().toString(),
       title,
       date: new Date().toISOString(),
-      status: 'processing',
-      userId: '1',
+      status: 'uploaded',
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     }
 
     return NextResponse.json({ 
       success: true, 
-      data: { meeting: newMeeting } 
+      data: { 
+        meetingId: newMeeting.meetingId,
+        status: 'uploaded',
+        message: '회의가 생성되었습니다.'
+      } 
     })
   } catch (error) {
     console.error('Meetings POST API error:', error)

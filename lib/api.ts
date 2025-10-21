@@ -106,6 +106,43 @@ class ApiClient {
 
   // POST 요청
   async post<T>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
+    // FormData인 경우 그대로 전송
+    if (data instanceof FormData) {
+      const url = `${this.baseURL}${endpoint}`
+      const headers: HeadersInit = {}
+      
+      if (this.token) {
+        headers.Authorization = `Bearer ${this.token}`
+      }
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: data,
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}))
+          throw {
+            message: errorData.message || 'API 요청 실패',
+            status: response.status,
+          } as ApiError
+        }
+
+        const responseData = await response.json()
+        return responseData
+      } catch (error) {
+        if (error instanceof Error) {
+          throw {
+            message: error.message,
+            status: 0,
+          } as ApiError
+        }
+        throw error
+      }
+    }
+    
     return this.request<T>(endpoint, {
       method: 'POST',
       body: data ? JSON.stringify(data) : undefined,

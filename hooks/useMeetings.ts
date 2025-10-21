@@ -48,10 +48,10 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
       if (pagination?.sortBy) params.append('sortBy', pagination.sortBy)
       if (pagination?.sortOrder) params.append('sortOrder', pagination.sortOrder)
 
-      const response = await apiClient.get<{ content: Meeting[], page: number, size: number, totalPages: number }>(`/meetings?${params}`)
-      setMeetings(response.data.content)
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : '회의 목록을 가져오는데 실패했습니다'
+      const response = await apiClient.get<{ content: Meeting[], page: number, size: number, totalPages: number }>(`/meetings${params.toString() ? '?' + params.toString() : ''}`)
+      setMeetings(response.data.content || [])
+    } catch (err: any) {
+      const errorMessage = err?.message || '회의 목록을 가져오는데 실패했습니다'
       setError(errorMessage)
       console.error('회의 목록 가져오기 실패:', err)
     } finally {
@@ -59,29 +59,25 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
     }
   }, [pagination])
 
-  // 통계 정보 가져오기 (API에 통계 엔드포인트가 없으므로 로컬 계산)
-  const fetchStats = useCallback(async () => {
-    try {
-      const totalMeetings = meetings.length
-      const completedMeetings = meetings.filter((m: Meeting) => m.status === 'completed').length
-      const processingMeetings = meetings.filter((m: Meeting) => m.status === 'processing').length
-      const failedMeetings = meetings.filter((m: Meeting) => m.status === 'failed').length
-      const totalDuration = meetings.reduce((sum: number, m: Meeting) => sum + (m.duration || 0), 0)
-      const totalActionItems = meetings.reduce((sum: number, m: Meeting) => sum + (m.actionCount || 0), 0)
+  // 통계 정보 계산 (meetings가 변경될 때마다 자동으로 업데이트)
+  useEffect(() => {
+    const totalMeetings = meetings.length
+    const completedMeetings = meetings.filter((m: Meeting) => m.status === 'completed').length
+    const processingMeetings = meetings.filter((m: Meeting) => m.status === 'processing').length
+    const failedMeetings = meetings.filter((m: Meeting) => m.status === 'failed').length
+    const totalDuration = meetings.reduce((sum: number, m: Meeting) => sum + (m.duration || 0), 0)
+    const totalActionItems = meetings.reduce((sum: number, m: Meeting) => sum + (m.actionCount || 0), 0)
 
-      setStats({
-        totalMeetings,
-        totalDuration,
-        averageDuration: totalMeetings > 0 ? totalDuration / totalMeetings : 0,
-        completedMeetings,
-        processingMeetings,
-        failedMeetings,
-        totalActionItems,
-        completedActionItems: 0,
-      })
-    } catch (err) {
-      console.error('통계 정보 가져오기 실패:', err)
-    }
+    setStats({
+      totalMeetings,
+      totalDuration,
+      averageDuration: totalMeetings > 0 ? totalDuration / totalMeetings : 0,
+      completedMeetings,
+      processingMeetings,
+      failedMeetings,
+      totalActionItems,
+      completedActionItems: 0,
+    })
   }, [meetings])
 
   // 회의 생성 (파일 업로드)
@@ -200,8 +196,8 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
 
   // 데이터 새로고침
   const refreshMeetings = useCallback(async () => {
-    await Promise.all([fetchMeetings(), fetchStats()])
-  }, [fetchMeetings, fetchStats])
+    await fetchMeetings()
+  }, [fetchMeetings])
 
   // 초기 데이터 로드
   useEffect(() => {

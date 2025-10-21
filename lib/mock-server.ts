@@ -16,8 +16,56 @@ import type {
 
 // Mock 데이터 저장소
 class MockDataStore {
-  private users: User[] = []
-  private meetings: Meeting[] = []
+  private users: User[] = [
+    {
+      userId: 'test-user-1',
+      email: 'test@meeting.com',
+      nickname: '테스트 사용자',
+      createdAt: new Date().toISOString()
+    }
+  ]
+  private meetings: Meeting[] = [
+    {
+      meetingId: 'mock-meeting-1',
+      title: '프로젝트 기획 회의',
+      date: new Date(Date.now() - 86400000).toISOString(),
+      status: 'completed',
+      summary: '프로젝트 일정과 역할 분담에 대해 논의했습니다. 다음 주까지 디자인 시안을 완성하기로 결정했습니다.',
+      keywords: ['프로젝트', '일정', '역할분담', '디자인'],
+      speakers: [
+        {
+          speakerId: 'speaker_1',
+          segments: [
+            { start: 0, end: 5, text: '안녕하세요, 오늘 회의를 시작하겠습니다.' },
+            { start: 5, end: 15, text: '주요 안건은 프로젝트 일정 조정입니다.' }
+          ]
+        },
+        {
+          speakerId: 'speaker_2',
+          segments: [
+            { start: 15, end: 25, text: '네, 이해했습니다. 다음 주까지 완료하겠습니다.' }
+          ]
+        }
+      ],
+      createdAt: new Date(Date.now() - 86400000).toISOString(),
+    },
+    {
+      meetingId: 'mock-meeting-2',
+      title: '디자인 리뷰 미팅',
+      date: new Date(Date.now() - 172800000).toISOString(),
+      status: 'completed',
+      summary: 'UI/UX 디자인 시안에 대한 검토를 진행했습니다. 전반적으로 긍정적인 피드백을 받았습니다.',
+      keywords: ['디자인', 'UI', 'UX', '피드백'],
+      createdAt: new Date(Date.now() - 172800000).toISOString(),
+    },
+    {
+      meetingId: 'mock-meeting-3',
+      title: '주간 스프린트 회고',
+      date: new Date(Date.now() - 259200000).toISOString(),
+      status: 'processing',
+      createdAt: new Date(Date.now() - 259200000).toISOString(),
+    }
+  ]
   private tokens: Map<string, string> = new Map() // token -> userId
 
   // 사용자 생성
@@ -155,21 +203,40 @@ export class MockApiClient {
 
   constructor(baseURL: string) {
     this.baseURL = baseURL
+    // 초기화 시 localStorage에서 토큰 읽기
+    if (typeof window !== 'undefined') {
+      this.token = localStorage.getItem('accessToken')
+    }
   }
 
   setToken(accessToken: string, refreshToken?: string) {
     this.token = accessToken
+    // localStorage에도 저장
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('accessToken', accessToken)
+      if (refreshToken) {
+        localStorage.setItem('refreshToken', refreshToken)
+      }
+    }
   }
 
   clearToken() {
     this.token = null
+    // localStorage에서도 제거
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('accessToken')
+      localStorage.removeItem('refreshToken')
+    }
   }
 
   private async mockRequest<T>(endpoint: string, options: RequestInit = {}): Promise<{ data: T }> {
+    console.log('[Mock Server] Request:', options.method, endpoint, 'Token:', this.token ? 'Present' : 'None')
+    
     // 인증이 필요한 요청인지 확인
     const authRequired = !endpoint.includes('/auth/signup') && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/check-nickname')
     
     if (authRequired && !this.token) {
+      console.error('[Mock Server] 인증 필요 - 토큰 없음')
       throw { message: '인증이 필요합니다', status: 401 }
     }
 
@@ -177,12 +244,17 @@ export class MockApiClient {
     if (authRequired && this.token) {
       const user = mockStore.getUserByToken(this.token)
       if (!user) {
+        console.error('[Mock Server] 유효하지 않은 토큰:', this.token)
         throw { message: '유효하지 않은 토큰입니다', status: 401 }
       }
+      console.log('[Mock Server] 인증 성공:', user.email)
     }
 
+    // 쿼리 스트링 제거하고 순수 경로만 추출
+    const cleanEndpoint = endpoint.split('?')[0]
+    
     // API 엔드포인트별 처리
-    switch (endpoint) {
+    switch (cleanEndpoint) {
       case '/auth/signup':
         if (options.method === 'POST') {
           const body = JSON.parse(options.body as string)
@@ -199,11 +271,21 @@ export class MockApiClient {
       case '/auth/login':
         if (options.method === 'POST') {
           const body = JSON.parse(options.body as string)
-          const user = mockStore.getUserByEmail(body.email)
           
           // Mock에서는 간단한 비밀번호 검증 (8자 이상이면 통과)
-          if (!user || body.password.length < 8) {
+          if (body.password.length < 8) {
             throw { message: '이메일 또는 비밀번호가 올바르지 않습니다', status: 401 }
+          }
+          
+          let user = mockStore.getUserByEmail(body.email)
+          
+          // 개발 편의를 위해 사용자가 없으면 자동 생성 (Mock 전용)
+          if (!user) {
+            user = mockStore.createUser({
+              email: body.email,
+              password: body.password,
+              nickname: body.email.split('@')[0]
+            })
           }
           
           const token = mockStore.generateToken(user.userId)
@@ -240,10 +322,12 @@ export class MockApiClient {
 
       case '/meetings':
         if (options.method === 'GET') {
-          const url = new URL(`http://localhost${endpoint}`)
+          console.log('[Mock Server] Getting meetings list')
+          const url = new URL(`http://localhost:3000${endpoint}`)
           const page = parseInt(url.searchParams.get('page') || '1')
           const size = parseInt(url.searchParams.get('size') || '10')
           const result = mockStore.getMeetings(page, size)
+          console.log('[Mock Server] Meetings found:', result.content.length)
           return { data: result as T }
         } else if (options.method === 'POST') {
           // FormData 처리
@@ -263,8 +347,8 @@ export class MockApiClient {
 
       default:
         // 동적 라우트 처리 (/meetings/{id})
-        if (endpoint.startsWith('/meetings/') && endpoint !== '/meetings') {
-          const meetingId = endpoint.split('/')[2]
+        if (cleanEndpoint.startsWith('/meetings/') && cleanEndpoint !== '/meetings') {
+          const meetingId = cleanEndpoint.split('/')[2]
           
           if (options.method === 'GET') {
             const meeting = mockStore.getMeetingById(meetingId)
@@ -284,6 +368,7 @@ export class MockApiClient {
         break
     }
 
+    console.error('[Mock Server] API not found:', cleanEndpoint, options.method)
     throw { message: 'API를 찾을 수 없습니다', status: 404 }
   }
 
