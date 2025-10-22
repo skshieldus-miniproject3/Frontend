@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Download, ArrowLeft, CheckCircle2, Clock, User, Mic, LogOut, Edit, Save, X, Star } from "lucide-react"
+import { Download, ArrowLeft, CheckCircle2, Clock, User, Mic, LogOut, Edit, Save, X, Star, Trash2 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { apiClient } from "@/lib/api"
 import { useMeetings } from "@/hooks/useMeetings"
@@ -76,11 +76,12 @@ export default function MeetingDetailPage() {
   const router = useRouter()
   const params = useParams()
   const { user, logout } = useAuth()
-  const { toggleFavorite } = useMeetings({ autoFetch: false })
+  const { toggleFavorite, deleteMeeting } = useMeetings({ autoFetch: false })
   const [meeting, setMeeting] = useState<Meeting | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isEditing, setIsEditing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [editedTitle, setEditedTitle] = useState("")
   const [editedSummary, setEditedSummary] = useState("")
   const [editedKeywords, setEditedKeywords] = useState("")
@@ -145,6 +146,28 @@ export default function MeetingDetailPage() {
       setMeeting(prev => prev ? { ...prev, isFavorite } : null)
     } catch (error) {
       console.error('즐겨찾기 설정 실패:', error)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!meeting || !params.id) return
+    
+    const confirmed = window.confirm(
+      `"${meeting.title}" 회의록을 삭제하시겠습니까?\n\n삭제된 회의록은 복구할 수 없습니다.`
+    )
+    
+    if (!confirmed) return
+    
+    try {
+      setIsDeleting(true)
+      await deleteMeeting(params.id as string)
+      alert('✅ 회의록이 삭제되었습니다.')
+      router.push('/meetings')
+    } catch (error: any) {
+      console.error('회의록 삭제 중 오류:', error)
+      alert(`❌ 회의록 삭제 실패\n\n${error.message || '알 수 없는 오류가 발생했습니다.'}`)
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -359,6 +382,15 @@ export default function MeetingDetailPage() {
                   <Button variant="outline" onClick={handleEditStart}>
                     <Edit className="w-4 h-4 mr-2" />
                     수정
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                    className="border-red-200 text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    {isDeleting ? "삭제 중..." : "삭제"}
                   </Button>
                   <Button variant="outline" onClick={() => handleDownload("txt")}>
                     <Download className="w-4 h-4 mr-2" />

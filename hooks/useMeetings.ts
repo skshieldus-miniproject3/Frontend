@@ -58,19 +58,27 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
       // 백엔드가 직접 { content, page, size, totalPages } 반환
       const data = (response as any).content ? response : (response as any).data
       
+      // 데이터가 없으면 빈 배열로 처리
+      if (!data || !data.content) {
+        setMeetings([])
+        setTotalPages(0)
+        setCurrentPage(1)
+        return
+      }
+      
       // localStorage에서 즐겨찾기 목록 가져오기
       const favoritesStr = typeof window !== 'undefined' ? localStorage.getItem('favorites') : null
       const favorites: string[] = favoritesStr ? JSON.parse(favoritesStr) : []
       
       // 회의 목록에 isFavorite 필드 추가
-      const meetingsWithFavorites = (data?.content || []).map((meeting: Meeting) => ({
+      const meetingsWithFavorites = data.content.map((meeting: Meeting) => ({
         ...meeting,
-        isFavorite: favorites.includes(meeting.meetingId)
+        isFavorite: meeting.meetingId ? favorites.includes(meeting.meetingId) : false
       }))
       
       setMeetings(meetingsWithFavorites)
-      setTotalPages(data?.totalPages || 0)
-      setCurrentPage(data?.page || pagination?.page || 1)
+      setTotalPages(data.totalPages || 0)
+      setCurrentPage(data.page || pagination?.page || 1)
     } catch (err: any) {
       const errorMessage = err?.message || '회의 목록을 가져오는데 실패했습니다'
       setError(errorMessage)

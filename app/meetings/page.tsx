@@ -7,10 +7,11 @@ import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Mic, Upload, LogOut, Loader2, FileText, Clock, CheckCircle2, ListTodo, ChevronLeft, ChevronRight, Star } from "lucide-react"
+import { Mic, Upload, LogOut, Loader2, FileText, Clock, CheckCircle2, ListTodo, ChevronLeft, ChevronRight, Star, Trash2 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { useMeetings } from "@/hooks/useMeetings"
 import { validateAudioFile } from "@/lib/file-validation"
+import { apiClient } from "@/lib/api"
 
 export default function MeetingsPage() {
   const router = useRouter()
@@ -19,7 +20,7 @@ export default function MeetingsPage() {
   const pageSize = 5
   const [allMeetings, setAllMeetings] = useState<any[]>([])
   
-  const { meetings, isLoading, uploadAudioFile, totalPages, toggleFavorite } = useMeetings({
+  const { meetings, isLoading, uploadAudioFile, totalPages, toggleFavorite, deleteMeeting } = useMeetings({
     pagination: {
       page: currentPage,
       limit: pageSize
@@ -68,8 +69,25 @@ export default function MeetingsPage() {
         return
       }
 
+      // 제목 입력 받기
+      const title = window.prompt('회의 제목을 입력하세요:', file.name.replace(/\.[^/.]+$/, ''))
+      if (!title || !title.trim()) {
+        alert('❌ 회의 제목을 입력해주세요.')
+        e.target.value = ''
+        return
+      }
+
       try {
-        await uploadAudioFile(file)
+        // FormData 생성
+        const formData = new FormData()
+        formData.append('title', title.trim())
+        formData.append('date', new Date().toISOString())
+        formData.append('file', file)
+
+        // 백엔드로 업로드
+        const response = await apiClient.post('/meetings', formData)
+        
+        alert('✅ 회의가 성공적으로 업로드되었습니다!')
       } catch (error: any) {
         console.error('파일 업로드 실패:', error)
         alert(`❌ 파일 업로드 실패\n\n${error.message || '알 수 없는 오류가 발생했습니다.'}`)
@@ -98,6 +116,24 @@ export default function MeetingsPage() {
       })))
     } catch (error) {
       console.error('즐겨찾기 설정 실패:', error)
+    }
+  }
+
+  const handleDeleteMeeting = async (e: React.MouseEvent, meetingId: string, meetingTitle: string) => {
+    e.stopPropagation() // 카드 클릭 이벤트 전파 방지
+    
+    const confirmed = window.confirm(
+      `"${meetingTitle}" 회의록을 삭제하시겠습니까?\n\n삭제된 회의록은 복구할 수 없습니다.`
+    )
+    
+    if (!confirmed) return
+    
+    try {
+      await deleteMeeting(meetingId)
+      alert('✅ 회의록이 삭제되었습니다.')
+    } catch (error: any) {
+      console.error('회의록 삭제 실패:', error)
+      alert(`❌ 회의록 삭제 실패\n\n${error.message || '알 수 없는 오류가 발생했습니다.'}`)
     }
   }
 
@@ -234,7 +270,15 @@ export default function MeetingsPage() {
                               >
                                 <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
                               </Button>
-                              <h3 className="text-xl font-bold">{meeting.title}</h3>
+                              <h3 className="text-xl font-bold flex-1">{meeting.title}</h3>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="p-1 h-auto hover:bg-red-50"
+                                onClick={(e) => handleDeleteMeeting(e, meeting.meetingId, meeting.title)}
+                              >
+                                <Trash2 className="w-4 h-4 text-red-500" />
+                              </Button>
                               {meeting.status === "processing" ? (
                                 <Badge
                                   variant="secondary"
@@ -325,7 +369,15 @@ export default function MeetingsPage() {
                             className={`w-5 h-5 ${meeting.isFavorite ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'}`} 
                           />
                         </Button>
-                        <h3 className="text-xl font-bold">{meeting.title}</h3>
+                        <h3 className="text-xl font-bold flex-1">{meeting.title}</h3>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="p-1 h-auto hover:bg-red-50"
+                          onClick={(e) => handleDeleteMeeting(e, meeting.meetingId, meeting.title)}
+                        >
+                          <Trash2 className="w-4 h-4 text-red-500" />
+                        </Button>
                         {meeting.status === "processing" ? (
                           <Badge
                             variant="secondary"

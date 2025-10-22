@@ -36,7 +36,7 @@ export default function Home() {
     setViewState("recording")
   }
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
       // 파일 검증
@@ -47,36 +47,32 @@ export default function Home() {
         return
       }
 
-      const newMeeting = {
-        id: Date.now().toString(),
-        title: file.name.replace(/\.[^/.]+$/, ""),
-        date: new Date().toISOString(),
-        status: "processing",
+      // 제목 입력 받기
+      const title = window.prompt('회의 제목을 입력하세요:', file.name.replace(/\.[^/.]+$/, ''))
+      if (!title || !title.trim()) {
+        alert('❌ 회의 제목을 입력해주세요.')
+        e.target.value = ''
+        return
       }
 
-      const meetingsStr = localStorage.getItem("meetings")
-      const meetings = meetingsStr ? JSON.parse(meetingsStr) : []
-      const updatedMeetings = [newMeeting, ...meetings]
-      localStorage.setItem("meetings", JSON.stringify(updatedMeetings))
+      try {
+        // FormData 생성
+        const formData = new FormData()
+        formData.append('title', title.trim())
+        formData.append('date', new Date().toISOString())
+        formData.append('file', file)
 
-      // Simulate processing completion
-      setTimeout(() => {
-        const completedMeetings = updatedMeetings.map((m) =>
-          m.id === newMeeting.id
-            ? {
-                ...m,
-                status: "completed",
-                summary: "회의 내용이 성공적으로 분석되었습니다.",
-                actionCount: 4,
-                duration: 180,
-              }
-            : m,
-        )
-        localStorage.setItem("meetings", JSON.stringify(completedMeetings))
-      }, 5000)
-
-      e.target.value = ''
-      router.push("/meetings")
+        // 백엔드로 업로드
+        await apiClient.post('/meetings', formData)
+        
+        alert('✅ 회의가 성공적으로 업로드되었습니다!')
+        router.push('/meetings')
+      } catch (error: any) {
+        console.error('파일 업로드 실패:', error)
+        alert(`❌ 파일 업로드 실패\n\n${error.message || '알 수 없는 오류가 발생했습니다.'}`)
+      } finally {
+        e.target.value = ''
+      }
     }
   }
 
