@@ -21,9 +21,12 @@ interface UseMeetingsReturn {
   isLoading: boolean
   error: string | null
   stats: MeetingStats | null
+  totalPages: number
+  currentPage: number
   createMeeting: (data: CreateMeetingRequest) => Promise<Meeting>
   updateMeeting: (id: string, data: UpdateMeetingRequest) => Promise<Meeting>
   deleteMeeting: (id: string) => Promise<void>
+  toggleFavorite: (id: string) => Promise<void>
   refreshMeetings: () => Promise<void>
   uploadAudioFile: (file: File) => Promise<Meeting>
   uploadAudioBlob: (blob: Blob, title: string) => Promise<Meeting>
@@ -35,6 +38,8 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [stats, setStats] = useState<MeetingStats | null>(null)
+  const [totalPages, setTotalPages] = useState(0)
+  const [currentPage, setCurrentPage] = useState(pagination?.page || 1)
 
   // 회의 목록 가져오기
   const fetchMeetings = useCallback(async () => {
@@ -49,7 +54,23 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
       if (pagination?.sortOrder) params.append('sortOrder', pagination.sortOrder)
 
       const response = await apiClient.get<{ content: Meeting[], page: number, size: number, totalPages: number }>(`/meetings${params.toString() ? '?' + params.toString() : ''}`)
-      setMeetings(response.data.content || [])
+      
+      // 백엔드가 직접 { content, page, size, totalPages } 반환
+      const data = (response as any).content ? response : (response as any).data
+      
+      // localStorage에서 즐겨찾기 목록 가져오기
+      const favoritesStr = typeof window !== 'undefined' ? localStorage.getItem('favorites') : null
+      const favorites: string[] = favoritesStr ? JSON.parse(favoritesStr) : []
+      
+      // 회의 목록에 isFavorite 필드 추가
+      const meetingsWithFavorites = (data?.content || []).map((meeting: Meeting) => ({
+        ...meeting,
+        isFavorite: favorites.includes(meeting.meetingId)
+      }))
+      
+      setMeetings(meetingsWithFavorites)
+      setTotalPages(data?.totalPages || 0)
+      setCurrentPage(data?.page || pagination?.page || 1)
     } catch (err: any) {
       const errorMessage = err?.message || '회의 목록을 가져오는데 실패했습니다'
       setError(errorMessage)
@@ -57,7 +78,7 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
     } finally {
       setIsLoading(false)
     }
-  }, [pagination])
+  }, [pagination?.page, pagination?.limit, pagination?.sortBy, pagination?.sortOrder])
 
   // 통계 정보 계산 (meetings가 변경될 때마다 자동으로 업데이트)
   useEffect(() => {
@@ -153,6 +174,40 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
     }
   }, [])
 
+  // 즐겨찾기 토글 (localStorage 사용)
+  const toggleFavorite = useCallback(async (id: string): Promise<void> => {
+    try {
+      // localStorage에서 즐겨찾기 목록 가져오기
+      const favoritesStr = localStorage.getItem('favorites')
+      const favorites: string[] = favoritesStr ? JSON.parse(favoritesStr) : []
+      
+      let newFavorites: string[]
+      let isFavorite: boolean
+      
+      if (favorites.includes(id)) {
+        // 즐겨찾기 해제
+        newFavorites = favorites.filter(fId => fId !== id)
+        isFavorite = false
+      } else {
+        // 즐겨찾기 추가
+        newFavorites = [...favorites, id]
+        isFavorite = true
+      }
+      
+      // localStorage에 저장
+      localStorage.setItem('favorites', JSON.stringify(newFavorites))
+      
+      // 로컬 상태 업데이트
+      setMeetings(prev => prev.map(m => 
+        m.meetingId === id ? { ...m, isFavorite } : m
+      ))
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '즐겨찾기 설정에 실패했습니다'
+      setError(errorMessage)
+      throw err
+    }
+  }, [])
+
   // 오디오 파일 업로드
   const uploadAudioFile = useCallback(async (file: File): Promise<Meeting> => {
     try {
@@ -199,21 +254,25 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
     await fetchMeetings()
   }, [fetchMeetings])
 
-  // 초기 데이터 로드
+  // 초기 데이터 로드 및 pagination 변경 시 데이터 로드
   useEffect(() => {
     if (autoFetch) {
-      refreshMeetings()
+      fetchMeetings()
     }
-  }, [autoFetch, refreshMeetings])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFetch, pagination?.page, pagination?.limit])
 
   return {
     meetings,
     isLoading,
     error,
     stats,
+    totalPages,
+    currentPage,
     createMeeting,
     updateMeeting,
     deleteMeeting,
+    toggleFavorite,
     refreshMeetings,
     uploadAudioFile,
     uploadAudioBlob,

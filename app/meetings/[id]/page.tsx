@@ -6,10 +6,13 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Download, ArrowLeft, CheckCircle2, Clock, User, Mic, LogOut } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Download, ArrowLeft, CheckCircle2, Clock, User, Mic, LogOut, Edit, Save, X, Star } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { apiClient } from "@/lib/api"
-import type { Meeting } from "@/types/api"
+import { useMeetings } from "@/hooks/useMeetings"
+import type { Meeting, UpdateMeetingRequest } from "@/types/api"
 
 // Mock data
 const mockResult = {
@@ -73,14 +76,32 @@ export default function MeetingDetailPage() {
   const router = useRouter()
   const params = useParams()
   const { user, logout } = useAuth()
+  const { toggleFavorite } = useMeetings({ autoFetch: false })
   const [meeting, setMeeting] = useState<Meeting | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isEditing, setIsEditing] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [editedTitle, setEditedTitle] = useState("")
+  const [editedSummary, setEditedSummary] = useState("")
+  const [editedKeywords, setEditedKeywords] = useState("")
 
   useEffect(() => {
     const fetchMeeting = async () => {
       try {
         const response = await apiClient.get<Meeting>(`/meetings/${params.id}`)
-        setMeeting(response.data)
+        // 백엔드 응답 구조 확인: response.data 또는 response 직접 사용
+        const meetingData = (response as any).data || response
+        
+        // localStorage에서 즐겨찾기 상태 확인
+        const favoritesStr = localStorage.getItem('favorites')
+        const favorites: string[] = favoritesStr ? JSON.parse(favoritesStr) : []
+        const isFavorite = favorites.includes(params.id as string)
+        
+        setMeeting({ ...meetingData, isFavorite })
+        // 편집 필드 초기화
+        setEditedTitle(meetingData.title || "")
+        setEditedSummary(meetingData.summary || "")
+        setEditedKeywords(meetingData.keywords?.join(", ") || "")
       } catch (error) {
         console.error('회의록 상세 정보 가져오기 실패:', error)
       } finally {
@@ -95,6 +116,82 @@ export default function MeetingDetailPage() {
 
   const handleLogout = () => {
     logout()
+  }
+
+  const handleToggleFavorite = async () => {
+    if (!meeting || !params.id) return
+    try {
+      // localStorage에서 즐겨찾기 목록 가져오기
+      const favoritesStr = localStorage.getItem('favorites')
+      const favorites: string[] = favoritesStr ? JSON.parse(favoritesStr) : []
+      
+      let newFavorites: string[]
+      let isFavorite: boolean
+      
+      if (favorites.includes(params.id as string)) {
+        // 즐겨찾기 해제
+        newFavorites = favorites.filter(id => id !== params.id)
+        isFavorite = false
+      } else {
+        // 즐겨찾기 추가
+        newFavorites = [...favorites, params.id as string]
+        isFavorite = true
+      }
+      
+      // localStorage에 저장
+      localStorage.setItem('favorites', JSON.stringify(newFavorites))
+      
+      // 로컬 상태 업데이트
+      setMeeting(prev => prev ? { ...prev, isFavorite } : null)
+    } catch (error) {
+      console.error('즐겨찾기 설정 실패:', error)
+    }
+  }
+
+  const handleEditStart = () => {
+    setIsEditing(true)
+  }
+
+  const handleEditCancel = () => {
+    setIsEditing(false)
+    // 원래 값으로 복원
+    if (meeting) {
+      setEditedTitle(meeting.title)
+      setEditedSummary(meeting.summary || "")
+      setEditedKeywords(meeting.keywords?.join(", ") || "")
+    }
+  }
+
+  const handleEditSave = async () => {
+    if (!meeting || !params.id) return
+
+    try {
+      setIsSaving(true)
+
+      const updateData: UpdateMeetingRequest = {
+        title: editedTitle.trim(),
+        summary: editedSummary.trim(),
+        keywords: editedKeywords.split(",").map(k => k.trim()).filter(k => k.length > 0)
+      }
+
+      await apiClient.put(`/meetings/${params.id}`, updateData)
+      
+      // 업데이트된 회의 정보 다시 가져오기
+      const meetingResponse = await apiClient.get<Meeting>(`/meetings/${params.id}`)
+      const meetingData = (meetingResponse as any).data || meetingResponse
+      setMeeting(meetingData)
+      setEditedTitle(meetingData.title || "")
+      setEditedSummary(meetingData.summary || "")
+      setEditedKeywords(meetingData.keywords?.join(", ") || "")
+      
+      setIsEditing(false)
+      alert("✅ 회의록이 성공적으로 수정되었습니다!")
+    } catch (error: any) {
+      console.error('회의록 수정 중 오류:', error)
+      alert(`❌ 회의록 수정 실패\n\n${error.message || '알 수 없는 오류가 발생했습니다.'}`)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleDownload = (format: "txt" | "md" | "json") => {
@@ -209,10 +306,19 @@ export default function MeetingDetailPage() {
 
           {/* Header */}
           <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-3xl font-bold">{meeting.title}</h2>
+            <div className="flex-1">
+              {isEditing ? (
+                <Input
+                  value={editedTitle}
+                  onChange={(e) => setEditedTitle(e.target.value)}
+                  className="text-3xl font-bold h-auto py-2 mb-2"
+                  placeholder="회의 제목"
+                />
+              ) : (
+                <h2 className="text-3xl font-bold">{meeting.title}</h2>
+              )}
               <p className="text-muted-foreground mt-1">
-                {new Date(meeting.date).toLocaleDateString("ko-KR", {
+                {meeting.date && new Date(meeting.date).toLocaleDateString("ko-KR", {
                   year: "numeric",
                   month: "long",
                   day: "numeric",
@@ -222,28 +328,98 @@ export default function MeetingDetailPage() {
               </p>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => handleDownload("txt")}>
-                <Download className="w-4 h-4 mr-2" />
-                .txt
-              </Button>
-              <Button variant="outline" onClick={() => handleDownload("md")}>
-                <Download className="w-4 h-4 mr-2" />
-                .md
-              </Button>
-              <Button variant="outline" onClick={() => handleDownload("json")}>
-                <Download className="w-4 h-4 mr-2" />
-                .json
-              </Button>
+              {isEditing ? (
+                <>
+                  <Button 
+                    variant="outline" 
+                    onClick={handleEditCancel}
+                    disabled={isSaving}
+                  >
+                    <X className="w-4 h-4 mr-2" />
+                    취소
+                  </Button>
+                  <Button 
+                    onClick={handleEditSave}
+                    disabled={isSaving}
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    {isSaving ? "저장 중..." : "저장"}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button 
+                    variant="outline" 
+                    onClick={handleToggleFavorite}
+                    className={meeting.isFavorite ? "border-yellow-400" : ""}
+                  >
+                    <Star className={`w-4 h-4 mr-2 ${meeting.isFavorite ? 'fill-yellow-400 text-yellow-400' : ''}`} />
+                    {meeting.isFavorite ? "즐겨찾기 해제" : "즐겨찾기"}
+                  </Button>
+                  <Button variant="outline" onClick={handleEditStart}>
+                    <Edit className="w-4 h-4 mr-2" />
+                    수정
+                  </Button>
+                  <Button variant="outline" onClick={() => handleDownload("txt")}>
+                    <Download className="w-4 h-4 mr-2" />
+                    .txt
+                  </Button>
+                  <Button variant="outline" onClick={() => handleDownload("md")}>
+                    <Download className="w-4 h-4 mr-2" />
+                    .md
+                  </Button>
+                  <Button variant="outline" onClick={() => handleDownload("json")}>
+                    <Download className="w-4 h-4 mr-2" />
+                    .json
+                  </Button>
+                </>
+              )}
             </div>
           </div>
 
           {/* Summary Card */}
           <Card className="p-6">
             <h3 className="text-lg font-semibold mb-3">회의 요약</h3>
-            <p className="text-muted-foreground leading-relaxed text-pretty">
-              {meeting.summary || "아직 분석이 완료되지 않았습니다."}
-            </p>
+            {isEditing ? (
+              <Textarea
+                value={editedSummary}
+                onChange={(e) => setEditedSummary(e.target.value)}
+                className="min-h-[120px] text-base"
+                placeholder="회의 요약을 입력하세요"
+              />
+            ) : (
+              <p className="text-muted-foreground leading-relaxed text-pretty">
+                {meeting.summary || "아직 분석이 완료되지 않았습니다."}
+              </p>
+            )}
           </Card>
+
+          {/* Keywords Card (편집 모드용) */}
+          {(isEditing || (meeting.keywords && meeting.keywords.length > 0)) && (
+            <Card className="p-6">
+              <h3 className="text-lg font-semibold mb-3">키워드</h3>
+              {isEditing ? (
+                <div className="space-y-2">
+                  <Input
+                    value={editedKeywords}
+                    onChange={(e) => setEditedKeywords(e.target.value)}
+                    placeholder="키워드를 쉼표로 구분하여 입력하세요 (예: 프로젝트, 일정, 마감일)"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    쉼표(,)로 구분하여 입력해주세요
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {meeting.keywords?.map((keyword, index) => (
+                    <Badge key={index} variant="secondary">
+                      {keyword}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
 
           {/* Tabs */}
           <Tabs defaultValue="decisions" className="space-y-4">

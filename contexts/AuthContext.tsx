@@ -33,9 +33,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const initAuth = async () => {
       try {
         const accessToken = localStorage.getItem('accessToken')
-        if (accessToken) {
-          // 토큰이 있으면 사용자 정보 가져오기
-          await refreshUser()
+        const userStr = localStorage.getItem('user')
+        
+        if (accessToken && userStr) {
+          // localStorage에서 사용자 정보 복원
+          setUser(JSON.parse(userStr))
+          
+          // TODO: 백엔드 /auth/me API 구현 후 활성화
+          // await refreshUser()
         }
       } catch (error) {
         console.error('인증 초기화 실패:', error)
@@ -52,16 +57,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // 사용자 정보 새로고침
   const refreshUser = async () => {
-    try {
-      const response = await apiClient.get<User>('/auth/me')
-      setUser(response.data)
-      
-      // localStorage에도 저장 (fallback용)
-      localStorage.setItem('user', JSON.stringify(response.data))
-    } catch (error) {
-      console.error('사용자 정보 새로고침 실패:', error)
-      throw error
-    }
+    // TODO: 백엔드에 /auth/me API 구현 대기중
+    // try {
+    //   const response = await apiClient.get<User>('/auth/me')
+    //   setUser(response.data)
+    //   
+    //   // localStorage에도 저장 (fallback용)
+    //   localStorage.setItem('user', JSON.stringify(response.data))
+    // } catch (error) {
+    //   console.error('사용자 정보 새로고침 실패:', error)
+    //   throw error
+    // }
   }
 
   // 로그인
@@ -70,10 +76,28 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setIsLoading(true)
       
       const response = await apiClient.post<LoginResponse>('/auth/login', credentials)
-      apiClient.setToken(response.data.accessToken, response.data.refreshToken)
       
-      // 사용자 정보 가져오기
-      await refreshUser()
+      // 백엔드가 직접 { accessToken } 반환 (refreshToken 없음)
+      const accessToken = (response as any).accessToken || (response.data as any)?.accessToken
+      
+      if (!accessToken) {
+        throw new Error('로그인 응답에 토큰이 없습니다')
+      }
+      
+      apiClient.setToken(accessToken)
+      
+      // 임시로 이메일만 있는 사용자 정보 설정
+      const tempUser = {
+        userId: 'temp',
+        email: credentials.email,
+        nickname: credentials.email.split('@')[0],
+        createdAt: new Date().toISOString()
+      }
+      setUser(tempUser)
+      localStorage.setItem('user', JSON.stringify(tempUser))
+      
+      // TODO: 백엔드 /auth/me API 구현 후 활성화
+      // await refreshUser()
     } catch (error) {
       console.error('로그인 실패:', error)
       throw error
@@ -89,11 +113,29 @@ export function AuthProvider({ children }: AuthProviderProps) {
       
       const response = await apiClient.post<SignupResponse>('/auth/signup', userData)
       
-      // 회원가입 후 자동 로그인
-      await login({
-        email: userData.email,
-        password: userData.password
-      })
+      // 백엔드가 회원가입 시 바로 accessToken 반환
+      const accessToken = (response as any).accessToken || (response.data as any)?.accessToken
+      
+      if (accessToken) {
+        // 토큰이 있으면 바로 설정
+        apiClient.setToken(accessToken)
+        
+        // 임시 사용자 정보 설정
+        const tempUser = {
+          userId: 'temp',
+          email: userData.email,
+          nickname: userData.nickname,
+          createdAt: new Date().toISOString()
+        }
+        setUser(tempUser)
+        localStorage.setItem('user', JSON.stringify(tempUser))
+      } else {
+        // 토큰이 없으면 자동 로그인 시도
+        await login({
+          email: userData.email,
+          password: userData.password
+        })
+      }
     } catch (error) {
       console.error('회원가입 실패:', error)
       throw error

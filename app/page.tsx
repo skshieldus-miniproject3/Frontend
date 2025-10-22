@@ -5,9 +5,11 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { RecordingView } from "@/components/recording-view"
-import { Mic, Upload, LogOut, Sparkles, Share2 } from "lucide-react"
+import { Mic, Upload, LogOut, Sparkles, Share2, List } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { validateAudioFile } from "@/lib/file-validation"
+import { apiClient } from "@/lib/api"
+import type { CreateMeetingResponse } from "@/types/api"
 
 type ViewState = "start" | "recording"
 
@@ -78,36 +80,24 @@ export default function Home() {
     }
   }
 
-  const handleRecordingComplete = (blob: Blob) => {
-    const newMeeting = {
-      id: Date.now().toString(),
-      title: `회의 ${new Date().toLocaleDateString("ko-KR")}`,
-      date: new Date().toISOString(),
-      status: "processing",
+  const handleRecordingComplete = async (blob: Blob, title: string) => {
+    try {
+      // FormData 생성
+      const formData = new FormData()
+      formData.append('title', title)
+      formData.append('date', new Date().toISOString())
+      formData.append('file', blob, 'recording.webm')
+
+      // 백엔드로 업로드
+      const response = await apiClient.post<CreateMeetingResponse>('/meetings', formData)
+      const data = (response as any).data || response
+
+      alert('✅ 회의가 성공적으로 업로드되었습니다!')
+      router.push('/meetings')
+    } catch (error: any) {
+      console.error('회의 업로드 중 오류:', error)
+      alert(`❌ 회의 업로드 실패\n\n${error.message || '알 수 없는 오류가 발생했습니다.'}`)
     }
-
-    const meetingsStr = localStorage.getItem("meetings")
-    const meetings = meetingsStr ? JSON.parse(meetingsStr) : []
-    const updatedMeetings = [newMeeting, ...meetings]
-    localStorage.setItem("meetings", JSON.stringify(updatedMeetings))
-
-    // Simulate processing completion
-    setTimeout(() => {
-      const completedMeetings = updatedMeetings.map((m) =>
-        m.id === newMeeting.id
-          ? {
-              ...m,
-              status: "completed",
-              summary: "회의 내용이 성공적으로 분석되었습니다.",
-              actionCount: 4,
-              duration: 180,
-            }
-          : m,
-      )
-      localStorage.setItem("meetings", JSON.stringify(completedMeetings))
-    }, 5000)
-
-    router.push("/meetings")
   }
 
   if (!user) {
@@ -131,9 +121,6 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="sm" onClick={() => router.push("/meetings")} className="font-medium">
-              회의록 목록
-            </Button>
             <div className="text-right hidden sm:block">
               <p className="text-sm font-semibold">{user.name || user.email}</p>
               <p className="text-xs text-muted-foreground">{user.email}</p>
@@ -172,21 +159,31 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4">
               <Button
                 size="lg"
-                className="text-lg px-10 py-7 h-auto gradient-primary shadow-lg hover:shadow-xl transition-all font-semibold"
+                className="text-lg px-8 py-7 h-auto gradient-primary shadow-lg hover:shadow-xl transition-all font-semibold w-full sm:w-auto"
                 onClick={handleStartRecording}
               >
-                <Mic className="w-5 h-5 mr-3" />
+                <Mic className="w-5 h-5 mr-2" />
                 회의 시작하기
               </Button>
 
               <Button
                 size="lg"
                 variant="outline"
-                className="text-lg px-10 py-7 h-auto border-2 hover:bg-accent font-semibold bg-transparent"
+                className="text-lg px-8 py-7 h-auto border-2 hover:bg-accent font-semibold bg-transparent w-full sm:w-auto"
                 onClick={() => document.getElementById("file-upload")?.click()}
               >
-                <Upload className="w-5 h-5 mr-3" />
+                <Upload className="w-5 h-5 mr-2" />
                 음성 파일 업로드
+              </Button>
+
+              <Button
+                size="lg"
+                variant="outline"
+                className="text-lg px-8 py-7 h-auto border-2 hover:bg-accent font-semibold bg-transparent w-full sm:w-auto"
+                onClick={() => router.push("/meetings")}
+              >
+                <List className="w-5 h-5 mr-2" />
+                회의록 목록
               </Button>
 
               <input

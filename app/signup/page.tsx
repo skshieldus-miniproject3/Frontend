@@ -67,7 +67,7 @@ export default function SignupPage() {
   }
 
   // 닉네임 중복 확인
-  const handleNicknameChange = async (value: string) => {
+  const handleNicknameChange = async (value: string): Promise<void> => {
     setNickname(value)
     setNicknameError("")
     

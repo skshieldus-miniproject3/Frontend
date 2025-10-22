@@ -13,7 +13,7 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   accessToken: string
-  refreshToken: string
+  // refreshToken은 백엔드가 반환하지 않음
 }
 
 export interface SignupRequest {
@@ -23,7 +23,7 @@ export interface SignupRequest {
 }
 
 export interface SignupResponse {
-  message: string
+  accessToken: string  // 백엔드는 회원가입 시 바로 토큰 반환
 }
 
 export interface Me {
@@ -37,17 +37,19 @@ export interface Me {
 export interface Meeting {
   meetingId: string
   title: string
-  date: string
-  status: 'uploaded' | 'processing' | 'completed'
+  date?: string  // DetailResponse에만 있음
+  status: 'UPLOADED' | 'PROCESSING' | 'COMPLETED' | 'uploaded' | 'processing' | 'completed'  // 대소문자 둘 다 허용
   summary?: string
-  keywords?: string[]
-  speakers?: Speaker[]
-  filePath?: string
+  keywords?: string[]  // DetailResponse에만 있음
+  speakers?: Speaker[]  // DetailResponse에만 있음
+  filePath?: string  // DetailResponse에만 있음
+  isFavorite?: boolean  // 즐겨찾기 여부
   createdAt: string
 }
 
 export interface Speaker {
   speakerId: string
+  name?: string  // 화자 이름 (사용자가 지정)
   segments: Segment[]
 }
 
@@ -65,7 +67,7 @@ export interface CreateMeetingRequest {
 
 export interface CreateMeetingResponse {
   meetingId: string
-  status: 'uploaded'
+  status: 'UPLOADED' | 'uploaded'  // 백엔드는 대문자로 반환
   message: string
 }
 

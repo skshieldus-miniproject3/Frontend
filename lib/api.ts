@@ -1,9 +1,6 @@
 // API 클라이언트 설정
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'
 
-// Mock 서버 사용 여부 (환경변수로 제어)
-const USE_MOCK_SERVER = process.env.NEXT_PUBLIC_USE_MOCK === 'true' || true // 강제 Mock 활성화
-
 // API 응답 타입
 interface ApiResponse<T> {
   data: T
@@ -212,15 +209,25 @@ class ApiClient {
 
   // 닉네임 중복 확인
   async checkNickname(nickname: string): Promise<{ available: boolean }> {
-    const response = await this.get<{ available: boolean }>(`/auth/check-nickname?nickname=${encodeURIComponent(nickname)}`)
-    return response.data
+    try {
+      // 백엔드는 { isDuplicate: boolean } 형태로 직접 반환
+      const response = await this.get<{ isDuplicate: boolean }>(`/auth/check-nickname?nickname=${encodeURIComponent(nickname)}`)
+      
+      // ApiResponse<T> 타입이므로 response는 전체 응답, response.data는 없을 수 있음
+      // 백엔드가 직접 { isDuplicate: boolean } 반환하는 경우
+      const isDuplicate = (response as any).isDuplicate
+      
+      // 백엔드 응답을 프론트엔드 형식으로 변환
+      return { available: !isDuplicate }
+    } catch (error) {
+      console.error('닉네임 확인 중 오류:', error)
+      throw error
+    }
   }
 }
 
-// API 클라이언트 인스턴스 생성 (Mock 서버 또는 실제 서버)
-import { mockApiClient } from './mock-server'
-
-export const apiClient = USE_MOCK_SERVER ? mockApiClient : new ApiClient(API_BASE_URL)
+// API 클라이언트 인스턴스 생성 (실제 백엔드 서버)
+export const apiClient = new ApiClient(API_BASE_URL)
 
 // API 에러 타입 export
 export type { ApiError, ApiResponse }

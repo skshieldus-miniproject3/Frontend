@@ -3,11 +3,13 @@
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Mic, Square, Download, Upload, Play, Pause } from "lucide-react"
 import { validateBlob } from "@/lib/file-validation"
 
 interface RecordingViewProps {
-  onComplete: (blob: Blob) => void
+  onComplete: (blob: Blob, title: string) => void
 }
 
 export function RecordingView({ onComplete }: RecordingViewProps) {
@@ -15,6 +17,7 @@ export function RecordingView({ onComplete }: RecordingViewProps) {
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [duration, setDuration] = useState(0)
+  const [title, setTitle] = useState(`회의 ${new Date().toLocaleDateString("ko-KR")}`)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -138,6 +141,12 @@ export function RecordingView({ onComplete }: RecordingViewProps) {
   const handleUpload = () => {
     if (!recordedBlob) return
     
+    // 제목 검증
+    if (!title.trim()) {
+      alert('❌ 회의 제목을 입력해주세요.')
+      return
+    }
+    
     // Blob 검증
     const validation = validateBlob(recordedBlob)
     if (!validation.valid) {
@@ -145,7 +154,7 @@ export function RecordingView({ onComplete }: RecordingViewProps) {
       return
     }
     
-    onComplete(recordedBlob)
+    onComplete(recordedBlob, title.trim())
   }
 
   const formatTime = (seconds: number) => {
@@ -205,6 +214,18 @@ export function RecordingView({ onComplete }: RecordingViewProps) {
         {/* 녹음 완료 후 */}
         {recordedBlob && (
           <div className="space-y-6">
+            <div className="space-y-2 text-left max-w-md mx-auto">
+              <Label htmlFor="meeting-title">회의 제목</Label>
+              <Input
+                id="meeting-title"
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="회의 제목을 입력하세요"
+                className="text-base"
+              />
+            </div>
+
             <div className="p-4 bg-muted rounded-lg">
               <p className="text-sm text-muted-foreground">
                 파일 크기: <span className="font-semibold text-foreground">{formatFileSize(recordedBlob.size)}</span>

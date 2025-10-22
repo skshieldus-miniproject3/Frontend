@@ -2,12 +2,12 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Mic, Upload, LogOut, Loader2, FileText, Clock, CheckCircle2, ListTodo } from "lucide-react"
+import { Mic, Upload, LogOut, Loader2, FileText, Clock, CheckCircle2, ListTodo, ChevronLeft, ChevronRight, Star } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { useMeetings } from "@/hooks/useMeetings"
 import { validateAudioFile } from "@/lib/file-validation"
@@ -15,7 +15,39 @@ import { validateAudioFile } from "@/lib/file-validation"
 export default function MeetingsPage() {
   const router = useRouter()
   const { user, logout } = useAuth()
-  const { meetings, isLoading, uploadAudioFile } = useMeetings()
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 5
+  const [allMeetings, setAllMeetings] = useState<any[]>([])
+  
+  const { meetings, isLoading, uploadAudioFile, totalPages, toggleFavorite } = useMeetings({
+    pagination: {
+      page: currentPage,
+      limit: pageSize
+    }
+  })
+
+  // 전체 회의 목록 가져오기 (즐겨찾기용)
+  const { meetings: allMeetingsData } = useMeetings({
+    autoFetch: true,
+    pagination: {
+      page: 1,
+      limit: 100  // 충분히 많은 수
+    }
+  })
+
+  // allMeetings 업데이트
+  useEffect(() => {
+    setAllMeetings(allMeetingsData)
+  }, [allMeetingsData])
+
+  // 즐겨찾기 항목과 일반 항목 분리
+  const favoriteMeetings = useMemo(() => {
+    return allMeetings.filter(m => m.isFavorite)
+  }, [allMeetings])
+
+  const regularMeetings = useMemo(() => {
+    return meetings.filter(m => !m.isFavorite)
+  }, [meetings])
 
   const handleLogout = () => {
     logout()
@@ -49,6 +81,24 @@ export default function MeetingsPage() {
 
   const handleMeetingClick = (meetingId: string) => {
     router.push(`/meetings/${meetingId}`)
+  }
+
+  const handleToggleFavorite = async (e: React.MouseEvent, meetingId: string) => {
+    e.stopPropagation() // 카드 클릭 이벤트 전파 방지
+    try {
+      await toggleFavorite(meetingId)
+      
+      // allMeetings 상태도 업데이트
+      const favoritesStr = localStorage.getItem('favorites')
+      const favorites: string[] = favoritesStr ? JSON.parse(favoritesStr) : []
+      
+      setAllMeetings(prev => prev.map(m => ({
+        ...m,
+        isFavorite: favorites.includes(m.meetingId)
+      })))
+    } catch (error) {
+      console.error('즐겨찾기 설정 실패:', error)
+    }
   }
 
   if (!user) {
@@ -155,16 +205,126 @@ export default function MeetingsPage() {
               </div>
             </Card>
           ) : (
-            <div className="space-y-4">
-              {meetings.map((meeting) => (
+            <>
+              {/* 즐겨찾기 섹션 */}
+              {favoriteMeetings.length > 0 && (
+                <div className="mb-8">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
+                    <h3 className="text-xl font-bold">즐겨찾기</h3>
+                    <Badge variant="secondary" className="ml-2">
+                      {favoriteMeetings.length}
+                    </Badge>
+                  </div>
+                  <div className="space-y-4">
+                    {favoriteMeetings.map((meeting) => (
+                      <Card
+                        key={meeting.meetingId}
+                        className="p-8 transition-all shadow-sm cursor-pointer card-hover border-yellow-200 bg-yellow-50/30"
+                        onClick={() => handleMeetingClick(meeting.meetingId)}
+                      >
+                        <div className="flex items-start justify-between gap-6">
+                          <div className="flex-1 space-y-4">
+                            <div className="flex items-center gap-4">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="p-1 h-auto hover:bg-transparent"
+                                onClick={(e) => handleToggleFavorite(e, meeting.meetingId)}
+                              >
+                                <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
+                              </Button>
+                              <h3 className="text-xl font-bold">{meeting.title}</h3>
+                              {meeting.status === "processing" ? (
+                                <Badge
+                                  variant="secondary"
+                                  className="flex items-center gap-2 px-3 py-1 text-sm font-semibold"
+                                >
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  분석 중
+                                </Badge>
+                              ) : meeting.status === "completed" ? (
+                                <Badge className="flex items-center gap-2 px-3 py-1 text-sm font-semibold gradient-primary border-0">
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  완료
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="flex items-center gap-2 px-3 py-1 text-sm font-semibold">
+                                  업로드됨
+                                </Badge>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap gap-6 text-sm text-muted-foreground font-medium">
+                              <div className="flex items-center gap-2">
+                                <Clock className="w-4 h-4" />
+                                <span>
+                                  {meeting.date && new Date(meeting.date).toLocaleDateString("ko-KR", {
+                                    year: "numeric",
+                                    month: "long",
+                                    day: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </span>
+                              </div>
+                              {meeting.keywords && meeting.keywords.length > 0 && (
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold">키워드 {meeting.keywords.length}개</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {meeting.status === "processing" ? (
+                              <div className="space-y-3 pt-2">
+                                <div className="flex items-center justify-between text-sm">
+                                  <span className="text-muted-foreground font-medium">AI가 회의 내용을 분석 중...</span>
+                                  <span className="text-primary font-bold">진행 중</span>
+                                </div>
+                                <div className="h-2.5 bg-secondary rounded-full overflow-hidden">
+                                  <div className="h-full gradient-primary rounded-full animate-pulse w-2/3 shadow-sm" />
+                                </div>
+                              </div>
+                            ) : meeting.status === "completed" && meeting.summary ? (
+                              <p className="text-sm text-muted-foreground text-pretty leading-relaxed bg-muted/50 p-4 rounded-lg">
+                                {meeting.summary}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 일반 회의록 섹션 */}
+              <div>
+                {favoriteMeetings.length > 0 && (
+                  <div className="flex items-center gap-2 mb-4">
+                    <h3 className="text-xl font-bold">전체 회의록</h3>
+                  </div>
+                )}
+                <div className="space-y-4">
+                  {regularMeetings.map((meeting) => (
                 <Card
                   key={meeting.meetingId}
-                  className={`p-8 transition-all shadow-sm ${meeting.status === "completed" ? "cursor-pointer card-hover border-border/50" : "border-border/50"}`}
-                  onClick={() => meeting.status === "completed" && handleMeetingClick(meeting.meetingId)}
+                  className="p-8 transition-all shadow-sm cursor-pointer card-hover border-border/50"
+                  onClick={() => handleMeetingClick(meeting.meetingId)}
                 >
                   <div className="flex items-start justify-between gap-6">
                     <div className="flex-1 space-y-4">
                       <div className="flex items-center gap-4">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="p-1 h-auto hover:bg-transparent"
+                          onClick={(e) => handleToggleFavorite(e, meeting.meetingId)}
+                        >
+                          <Star 
+                            className={`w-5 h-5 ${meeting.isFavorite ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'}`} 
+                          />
+                        </Button>
                         <h3 className="text-xl font-bold">{meeting.title}</h3>
                         {meeting.status === "processing" ? (
                           <Badge
@@ -225,6 +385,49 @@ export default function MeetingsPage() {
                   </div>
                 </Card>
               ))}
+            </div>
+              </div>
+            </>
+          )}
+
+          {/* Pagination */}
+          {!isLoading && meetings.length > 0 && totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-8">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="font-semibold"
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                이전
+              </Button>
+              
+              <div className="flex items-center gap-2">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                  <Button
+                    key={page}
+                    variant={currentPage === page ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setCurrentPage(page)}
+                    className={`w-10 h-10 font-semibold ${currentPage === page ? "gradient-primary" : ""}`}
+                  >
+                    {page}
+                  </Button>
+                ))}
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="font-semibold"
+              >
+                다음
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
             </div>
           )}
         </div>
