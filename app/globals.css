@@ -138,3 +138,27 @@
     box-shadow: 0 12px 24px -10px oklch(0.55 0.22 250 / 0.15);
   }
 }
+
+/* Print styles - PDF 출력용 */
+@media print {
+  header {
+    display: none !important;
+  }
+  
+  button {
+    display: none !important;
+  }
+  
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  
+  .no-print {
+    display: none !important;
+  }
+  
+  @page {
+    margin: 2cm;
+  }
+}

@@ -14,64 +14,6 @@ import { apiClient } from "@/lib/api"
 import { useMeetings } from "@/hooks/useMeetings"
 import type { Meeting, UpdateMeetingRequest } from "@/types/api"
 
-// Mock data
-const mockResult = {
-  summary:
-    "주간 스프린트 회의에서 베타 버전 출시 일정과 주요 기능 개발 현황을 논의했습니다. 로그인 시스템 리팩토링과 결제 모듈 통합이 주요 안건이었으며, 각 담당자별 마감일이 설정되었습니다.",
-  decisions: [
-    {
-      title: "베타 버전 10월 31일 출시 확정",
-      rationale: "현재 개발 진행률과 QA 일정을 고려하여 결정",
-      source: "회의 시작 후 5분 경과 시점",
-    },
-    {
-      title: "결제 모듈은 Stripe로 최종 결정",
-      rationale: "개발 편의성과 국내외 결제 지원을 고려",
-      source: "회의 중반부",
-    },
-  ],
-  actionItems: [
-    {
-      id: 1,
-      title: "로그인 시스템 리팩토링",
-      assignee: "모인지",
-      dueDate: "2025-10-28",
-      priority: "HIGH",
-      status: "TODO",
-    },
-    {
-      id: 2,
-      title: "Stripe 결제 모듈 통합",
-      assignee: "곽병국",
-      dueDate: "2025-10-30",
-      priority: "HIGH",
-      status: "TODO",
-    },
-    {
-      id: 3,
-      title: "UI/UX 최종 검토 및 수정",
-      assignee: "이석영",
-      dueDate: "2025-10-29",
-      priority: "MEDIUM",
-      status: "TODO",
-    },
-    {
-      id: 4,
-      title: "베타 테스트 시나리오 작성",
-      assignee: "신재석",
-      dueDate: "2025-10-27",
-      priority: "MEDIUM",
-      status: "TODO",
-    },
-  ],
-  transcript: `[00:00] 곽병국: 안녕하세요, 주간 스프린트 회의 시작하겠습니다.
-[00:15] 모인지: 로그인 시스템 리팩토링 진행 중입니다. 이번 주 금요일까지 완료 예정입니다.
-[00:45] 곽병국: 좋습니다. 결제 모듈은 Stripe로 최종 결정했습니다.
-[01:20] 이석영: UI 검토는 목요일까지 마무리하겠습니다.
-[01:50] 신재석: 베타 테스트 시나리오는 수요일까지 작성 완료하겠습니다.
-[02:15] 곽병국: 베타 버전은 10월 31일 출시로 확정합니다. 모두 수고하셨습니다.`,
-}
-
 export default function MeetingDetailPage() {
   const router = useRouter()
   const params = useParams()
@@ -262,27 +204,56 @@ export default function MeetingDetailPage() {
     )
   }
 
-  const handleDownload = (format: "txt" | "md" | "json") => {
+  const handleDownload = (format: "txt" | "md" | "json" | "pdf") => {
+    if (!meeting) {
+      alert("❌ 회의록 데이터가 없습니다")
+      return
+    }
+
     let content = ""
     let filename = ""
     let mimeType = ""
 
+    // 원문 텍스트 생성
+    const generateTranscript = () => {
+      if (!meeting.speakers || meeting.speakers.length === 0) {
+        return "원문 데이터가 없습니다."
+      }
+      
+      return meeting.speakers
+        .map(speaker => {
+          const speakerName = speaker.name || `화자 ${speaker.speakerId}`
+          return speaker.segments
+            .map(seg => {
+              const minutes = Math.floor(seg.start / 60)
+              const seconds = Math.floor(seg.start % 60)
+              return `[${minutes}:${seconds.toString().padStart(2, '0')}] ${speakerName}: ${seg.text}`
+            })
+            .join('\n')
+        })
+        .join('\n\n')
+    }
+
     switch (format) {
       case "txt":
-        content = mockResult.transcript
-        filename = "회의록_자막.txt"
+        content = generateTranscript()
+        filename = `${meeting.title}_원문.txt`
         mimeType = "text/plain"
         break
       case "md":
-        content = `# 회의록\n\n## 요약\n${mockResult.summary}\n\n## 결정사항\n${mockResult.decisions.map((d) => `- **${d.title}**: ${d.rationale}`).join("\n")}\n\n## 액션아이템\n${mockResult.actionItems.map((a) => `- [ ] ${a.title} (담당: ${a.assignee}, 마감: ${a.dueDate})`).join("\n")}`
-        filename = "회의록.md"
+        const keywords = meeting.keywords?.length ? `## 키워드\n${meeting.keywords.map(k => `- ${k}`).join('\n')}\n\n` : ''
+        content = `# ${meeting.title}\n\n**날짜:** ${new Date(meeting.date).toLocaleDateString('ko-KR')}\n\n## 요약\n${meeting.summary || '요약 정보가 없습니다.'}\n\n${keywords}## 원문\n${generateTranscript()}`
+        filename = `${meeting.title}.md`
         mimeType = "text/markdown"
         break
       case "json":
-        content = JSON.stringify(mockResult, null, 2)
-        filename = "회의록_구조화.json"
+        content = JSON.stringify(meeting, null, 2)
+        filename = `${meeting.title}_전체데이터.json`
         mimeType = "application/json"
         break
+      case "pdf":
+        handleDownloadPDF()
+        return
     }
 
     const blob = new Blob([content], { type: mimeType })
@@ -292,6 +263,13 @@ export default function MeetingDetailPage() {
     a.download = filename
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  const handleDownloadPDF = () => {
+    if (!meeting) return
+    
+    // 브라우저 인쇄 기능 사용 (한글 지원)
+    window.print()
   }
 
   const getPriorityColor = (priority: string) => {
@@ -337,9 +315,9 @@ export default function MeetingDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background print:bg-white">
       {/* Header */}
-      <header className="border-b border-border bg-card sticky top-0 z-50">
+      <header className="border-b border-border bg-card sticky top-0 z-50 no-print">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => router.push("/")}>
             <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
@@ -395,7 +373,7 @@ export default function MeetingDetailPage() {
                 })}
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 no-print">
               {isEditing ? (
                 <>
                   <Button 
@@ -448,6 +426,10 @@ export default function MeetingDetailPage() {
                   <Button variant="outline" onClick={() => handleDownload("json")}>
                     <Download className="w-4 h-4 mr-2" />
                     .json
+                  </Button>
+                  <Button variant="outline" onClick={() => handleDownload("pdf")} className="border-primary text-primary" title="브라우저 인쇄 기능을 사용합니다">
+                    <Download className="w-4 h-4 mr-2" />
+                    PDF 출력
                   </Button>
                 </>
               )}
