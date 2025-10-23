@@ -77,14 +77,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
       
       const response = await apiClient.post<LoginResponse>('/auth/login', credentials)
       
-      // 백엔드가 직접 { accessToken } 반환 (refreshToken 없음)
+      // 백엔드가 직접 { accessToken, refreshToken } 반환
       const accessToken = (response as any).accessToken || (response.data as any)?.accessToken
+      const refreshToken = (response as any).refreshToken || (response.data as any)?.refreshToken
       
       if (!accessToken) {
         throw new Error('로그인 응답에 토큰이 없습니다')
       }
       
-      apiClient.setToken(accessToken)
+      console.log('🔐 로그인 성공:', {
+        hasAccessToken: !!accessToken,
+        hasRefreshToken: !!refreshToken
+      })
+      
+      // Access Token과 Refresh Token 모두 저장
+      apiClient.setToken(accessToken, refreshToken)
       
       // 임시로 이메일만 있는 사용자 정보 설정
       const tempUser = {
@@ -113,12 +120,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
       
       const response = await apiClient.post<SignupResponse>('/auth/signup', userData)
       
-      // 백엔드가 회원가입 시 바로 accessToken 반환
+      // 백엔드가 회원가입 시 바로 accessToken, refreshToken 반환
       const accessToken = (response as any).accessToken || (response.data as any)?.accessToken
+      const refreshToken = (response as any).refreshToken || (response.data as any)?.refreshToken
       
       if (accessToken) {
-        // 토큰이 있으면 바로 설정
-        apiClient.setToken(accessToken)
+        console.log('🔐 회원가입 성공:', {
+          hasAccessToken: !!accessToken,
+          hasRefreshToken: !!refreshToken
+        })
+        
+        // 토큰이 있으면 바로 설정 (refreshToken도 포함)
+        apiClient.setToken(accessToken, refreshToken)
         
         // 임시 사용자 정보 설정
         const tempUser = {

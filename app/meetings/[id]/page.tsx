@@ -85,6 +85,11 @@ export default function MeetingDetailPage() {
   const [editedTitle, setEditedTitle] = useState("")
   const [editedSummary, setEditedSummary] = useState("")
   const [editedKeywords, setEditedKeywords] = useState("")
+  
+  // 화자 및 원문 편집 상태
+  const [editedSpeakers, setEditedSpeakers] = useState<Meeting['speakers']>([])
+  const [editingSpeakerId, setEditingSpeakerId] = useState<string | null>(null)
+  const [editingSegmentKey, setEditingSegmentKey] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchMeeting = async () => {
@@ -98,11 +103,15 @@ export default function MeetingDetailPage() {
         const favorites: string[] = favoritesStr ? JSON.parse(favoritesStr) : []
         const isFavorite = favorites.includes(params.id as string)
         
+        console.log('📥 회의록 데이터:', meetingData)
+        console.log('👥 화자 정보:', meetingData.speakers)
+        
         setMeeting({ ...meetingData, isFavorite })
         // 편집 필드 초기화
         setEditedTitle(meetingData.title || "")
         setEditedSummary(meetingData.summary || "")
         setEditedKeywords(meetingData.keywords?.join(", ") || "")
+        setEditedSpeakers(meetingData.speakers || [])  // 화자 정보 초기화
       } catch (error) {
         console.error('회의록 상세 정보 가져오기 실패:', error)
       } finally {
@@ -177,11 +186,14 @@ export default function MeetingDetailPage() {
 
   const handleEditCancel = () => {
     setIsEditing(false)
+    setEditingSpeakerId(null)
+    setEditingSegmentKey(null)
     // 원래 값으로 복원
     if (meeting) {
       setEditedTitle(meeting.title)
       setEditedSummary(meeting.summary || "")
       setEditedKeywords(meeting.keywords?.join(", ") || "")
+      setEditedSpeakers(meeting.speakers || [])
     }
   }
 
@@ -194,20 +206,26 @@ export default function MeetingDetailPage() {
       const updateData: UpdateMeetingRequest = {
         title: editedTitle.trim(),
         summary: editedSummary.trim(),
-        keywords: editedKeywords.split(",").map(k => k.trim()).filter(k => k.length > 0)
+        keywords: editedKeywords.split(",").map(k => k.trim()).filter(k => k.length > 0),
+        speakers: editedSpeakers  // 화자 정보 포함
       }
+
+      console.log('📤 회의록 수정 요청:', updateData)
 
       await apiClient.put(`/meetings/${params.id}`, updateData)
       
       // 업데이트된 회의 정보 다시 가져오기
       const meetingResponse = await apiClient.get<Meeting>(`/meetings/${params.id}`)
       const meetingData = (meetingResponse as any).data || meetingResponse
-      setMeeting(meetingData)
-      setEditedTitle(meetingData.title || "")
-      setEditedSummary(meetingData.summary || "")
-      setEditedKeywords(meetingData.keywords?.join(", ") || "")
+        setMeeting(meetingData)
+        setEditedTitle(meetingData.title || "")
+        setEditedSummary(meetingData.summary || "")
+        setEditedKeywords(meetingData.keywords?.join(", ") || "")
+        setEditedSpeakers(meetingData.speakers || [])
       
       setIsEditing(false)
+      setEditingSpeakerId(null)
+      setEditingSegmentKey(null)
       alert("✅ 회의록이 성공적으로 수정되었습니다!")
     } catch (error: any) {
       console.error('회의록 수정 중 오류:', error)
@@ -215,6 +233,33 @@ export default function MeetingDetailPage() {
     } finally {
       setIsSaving(false)
     }
+  }
+
+  // 화자 이름 수정
+  const handleSpeakerNameChange = (speakerId: string, newName: string) => {
+    setEditedSpeakers(prev => 
+      prev.map(speaker => 
+        speaker.speakerId === speakerId 
+          ? { ...speaker, name: newName }
+          : speaker
+      )
+    )
+  }
+
+  // segment text 수정
+  const handleSegmentTextChange = (speakerId: string, segmentIndex: number, newText: string) => {
+    setEditedSpeakers(prev =>
+      prev.map(speaker =>
+        speaker.speakerId === speakerId
+          ? {
+              ...speaker,
+              segments: speaker.segments.map((seg, idx) =>
+                idx === segmentIndex ? { ...seg, text: newText } : seg
+              )
+            }
+          : speaker
+      )
+    )
   }
 
   const handleDownload = (format: "txt" | "md" | "json") => {
@@ -488,18 +533,94 @@ export default function MeetingDetailPage() {
 
             <TabsContent value="transcript">
               <Card className="p-6">
-                <h3 className="text-lg font-semibold mb-4">회의 원문 (STT)</h3>
-                {meeting.speakers && meeting.speakers.length > 0 ? (
-                  <div className="space-y-4">
-                    {meeting.speakers.map((speaker, speakerIndex) => (
-                      <div key={speakerIndex} className="space-y-2">
-                        <h4 className="font-semibold text-sm text-primary">화자 {speaker.speakerId}</h4>
-                        <div className="space-y-1 font-mono text-sm">
-                          {speaker.segments.map((segment, segmentIndex) => (
-                            <p key={segmentIndex} className="text-muted-foreground leading-relaxed">
-                              [{Math.floor(segment.start / 60)}:{String(Math.floor(segment.start % 60)).padStart(2, '0')}] {segment.text}
-                            </p>
-                          ))}
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">회의 원문 (STT)</h3>
+                  {isEditing && (
+                    <p className="text-sm text-muted-foreground">
+                      💡 화자 이름과 원문을 클릭하여 수정할 수 있습니다
+                    </p>
+                  )}
+                </div>
+                {editedSpeakers && editedSpeakers.length > 0 ? (
+                  <div className="space-y-6">
+                    {editedSpeakers.map((speaker, speakerIndex) => (
+                      <div key={speakerIndex} className="space-y-3 p-4 bg-muted/30 rounded-lg">
+                        {/* 화자 이름 - 인라인 편집 */}
+                        <div className="flex items-center gap-2">
+                          {isEditing && editingSpeakerId === speaker.speakerId ? (
+                            <div className="flex items-center gap-2 flex-1">
+                              <Input
+                                value={speaker.name || ""}
+                                onChange={(e) => handleSpeakerNameChange(speaker.speakerId, e.target.value)}
+                                onBlur={() => setEditingSpeakerId(null)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') setEditingSpeakerId(null)
+                                  if (e.key === 'Escape') {
+                                    setEditingSpeakerId(null)
+                                    if (meeting) setEditedSpeakers(meeting.speakers || [])
+                                  }
+                                }}
+                                placeholder="화자 이름 입력"
+                                className="max-w-xs text-sm font-semibold"
+                                autoFocus
+                              />
+                              <span className="text-xs text-muted-foreground">(Enter: 저장, Esc: 취소)</span>
+                            </div>
+                          ) : (
+                            <h4 
+                              className={`font-semibold text-sm ${isEditing ? 'cursor-pointer hover:text-primary transition-colors px-2 py-1 rounded hover:bg-muted' : 'text-primary'}`}
+                              onClick={() => isEditing && setEditingSpeakerId(speaker.speakerId)}
+                            >
+                              <User className="w-4 h-4 inline mr-1" />
+                              {speaker.name || `화자 ${speaker.speakerId}`}
+                              {isEditing && <Edit className="w-3 h-3 inline ml-1 opacity-50" />}
+                            </h4>
+                          )}
+                        </div>
+                        
+                        {/* Segments - 원문 */}
+                        <div className="space-y-2 pl-2">
+                          {speaker.segments.map((segment, segmentIndex) => {
+                            const segmentKey = `${speaker.speakerId}-${segmentIndex}`
+                            const isEditingSegment = editingSegmentKey === segmentKey
+                            
+                            return (
+                              <div key={segmentIndex} className="flex gap-2 items-start">
+                                <span className="text-xs text-muted-foreground font-mono min-w-[50px] mt-1">
+                                  [{Math.floor(segment.start / 60)}:{String(Math.floor(segment.start % 60)).padStart(2, '0')}]
+                                </span>
+                                
+                                {isEditing && isEditingSegment ? (
+                                  <div className="flex-1">
+                                    <Textarea
+                                      value={segment.text}
+                                      onChange={(e) => handleSegmentTextChange(speaker.speakerId, segmentIndex, e.target.value)}
+                                      onBlur={() => setEditingSegmentKey(null)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Escape') {
+                                          setEditingSegmentKey(null)
+                                          if (meeting) setEditedSpeakers(meeting.speakers || [])
+                                        }
+                                      }}
+                                      className="text-sm min-h-[60px]"
+                                      autoFocus
+                                    />
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      Esc: 취소
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <p 
+                                    className={`text-sm text-muted-foreground leading-relaxed flex-1 ${isEditing ? 'cursor-pointer hover:bg-muted/50 p-2 rounded transition-colors' : ''}`}
+                                    onClick={() => isEditing && setEditingSegmentKey(segmentKey)}
+                                  >
+                                    {segment.text}
+                                    {isEditing && <Edit className="w-3 h-3 inline ml-2 opacity-30" />}
+                                  </p>
+                                )}
+                              </div>
+                            )
+                          })}
                         </div>
                       </div>
                     ))}

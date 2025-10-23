@@ -14,6 +14,10 @@ import type {
 interface UseMeetingsOptions {
   autoFetch?: boolean
   pagination?: PaginationParams
+  keyword?: string
+  title?: string
+  summary?: string
+  status?: string
 }
 
 interface UseMeetingsReturn {
@@ -33,7 +37,7 @@ interface UseMeetingsReturn {
 }
 
 export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn {
-  const { autoFetch = true, pagination } = options
+  const { autoFetch = true, pagination, keyword, title, summary, status } = options
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -52,6 +56,12 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
       if (pagination?.limit) params.append('size', pagination.limit.toString())
       if (pagination?.sortBy) params.append('sortBy', pagination.sortBy)
       if (pagination?.sortOrder) params.append('sortOrder', pagination.sortOrder)
+      
+      // 검색 파라미터 추가
+      if (keyword) params.append('keyword', keyword)
+      if (title) params.append('title', title)
+      if (summary) params.append('summary', summary)
+      if (status) params.append('status', status)
 
       const response = await apiClient.get<{ content: Meeting[], page: number, size: number, totalPages: number }>(`/meetings${params.toString() ? '?' + params.toString() : ''}`)
       
@@ -86,7 +96,7 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
     } finally {
       setIsLoading(false)
     }
-  }, [pagination?.page, pagination?.limit, pagination?.sortBy, pagination?.sortOrder])
+  }, [pagination?.page, pagination?.limit, pagination?.sortBy, pagination?.sortOrder, keyword, title, summary, status])
 
   // 통계 정보 계산 (meetings가 변경될 때마다 자동으로 업데이트)
   useEffect(() => {
@@ -262,13 +272,13 @@ export function useMeetings(options: UseMeetingsOptions = {}): UseMeetingsReturn
     await fetchMeetings()
   }, [fetchMeetings])
 
-  // 초기 데이터 로드 및 pagination 변경 시 데이터 로드
+  // 초기 데이터 로드 및 pagination/검색 변경 시 데이터 로드
   useEffect(() => {
     if (autoFetch) {
       fetchMeetings()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoFetch, pagination?.page, pagination?.limit])
+  }, [autoFetch, pagination?.page, pagination?.limit, keyword, title, summary, status])
 
   return {
     meetings,

@@ -18,6 +18,8 @@ interface ApiError {
 class ApiClient {
   private baseURL: string
   private token: string | null = null
+  private isRefreshing: boolean = false
+  private refreshSubscribers: Array<(token: string) => void> = []
 
   constructor(baseURL: string) {
     this.baseURL = baseURL
@@ -41,7 +43,62 @@ class ApiClient {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('accessToken')
       localStorage.removeItem('refreshToken')
+      localStorage.removeItem('user')
     }
+  }
+
+  // Refresh Token으로 새 Access Token 발급
+  private async refreshAccessToken(): Promise<string | null> {
+    try {
+      const refreshToken = typeof window !== 'undefined' ? localStorage.getItem('refreshToken') : null
+      
+      if (!refreshToken) {
+        console.warn('⚠️ Refresh Token이 없습니다')
+        return null
+      }
+
+      console.log('🔄 Access Token 갱신 중...')
+      
+      // 백엔드 API: 헤더에 Refresh Token 포함
+      const response = await fetch(`${this.baseURL}/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${refreshToken}`,  // 헤더에 Refresh Token 포함
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (!response.ok) {
+        console.error('❌ Token 갱신 실패:', response.status)
+        return null
+      }
+
+      const data = await response.json()
+      const newAccessToken = data.accessToken || data.data?.accessToken
+      const newRefreshToken = data.refreshToken || data.data?.refreshToken
+      
+      if (newAccessToken) {
+        console.log('✅ Access Token 갱신 완료')
+        // 새 Access Token과 Refresh Token 모두 저장 (Refresh Token도 갱신되는 경우 대비)
+        this.setToken(newAccessToken, newRefreshToken || refreshToken)
+        return newAccessToken
+      }
+
+      return null
+    } catch (error) {
+      console.error('❌ Token 갱신 중 오류:', error)
+      return null
+    }
+  }
+
+  // Refresh 대기 중인 요청들을 처리
+  private subscribeTokenRefresh(callback: (token: string) => void) {
+    this.refreshSubscribers.push(callback)
+  }
+
+  private onTokenRefreshed(token: string) {
+    this.refreshSubscribers.forEach(callback => callback(token))
+    this.refreshSubscribers = []
   }
 
   // 기본 헤더 설정
@@ -57,10 +114,11 @@ class ApiClient {
     return headers
   }
 
-  // HTTP 요청 메서드
+  // HTTP 요청 메서드 (401 시 자동 토큰 갱신)
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retry: boolean = true
   ): Promise<ApiResponse<T>> {
     const url = `${this.baseURL}${endpoint}`
     
@@ -75,6 +133,49 @@ class ApiClient {
     try {
       const response = await fetch(url, config)
       
+      // 401 에러 (Unauthorized) - 토큰 만료
+      if (response.status === 401 && retry && !endpoint.includes('/auth/refresh')) {
+        console.log('🔐 401 에러 감지 - 토큰 갱신 시도')
+        
+        // 이미 갱신 중이면 대기
+        if (this.isRefreshing) {
+          return new Promise((resolve, reject) => {
+            this.subscribeTokenRefresh((newToken: string) => {
+              // 새 토큰으로 재시도
+              this.request<T>(endpoint, options, false)
+                .then(resolve)
+                .catch(reject)
+            })
+          })
+        }
+
+        this.isRefreshing = true
+
+        // 토큰 갱신 시도
+        const newToken = await this.refreshAccessToken()
+        
+        if (newToken) {
+          this.isRefreshing = false
+          this.onTokenRefreshed(newToken)
+          
+          // 새 토큰으로 원래 요청 재시도
+          return this.request<T>(endpoint, options, false)
+        } else {
+          // 갱신 실패 - 로그아웃 처리
+          this.isRefreshing = false
+          this.clearToken()
+          
+          if (typeof window !== 'undefined') {
+            window.location.href = '/login'
+          }
+          
+          throw {
+            message: '인증이 만료되었습니다. 다시 로그인해주세요.',
+            status: 401,
+          } as ApiError
+        }
+      }
+      
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
         throw {
@@ -86,6 +187,10 @@ class ApiClient {
       const data = await response.json()
       return data
     } catch (error) {
+      if ((error as ApiError).status) {
+        throw error
+      }
+      
       if (error instanceof Error) {
         throw {
           message: error.message,

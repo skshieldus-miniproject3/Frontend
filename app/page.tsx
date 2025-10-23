@@ -62,8 +62,15 @@ export default function Home() {
         formData.append('date', new Date().toISOString())
         formData.append('file', file)
 
+        // 디버깅: FormData 내용 확인
+        console.log('📤 [프론트엔드] 업로드 요청 데이터:')
+        console.log('  - title:', title.trim())
+        console.log('  - date:', new Date().toISOString())
+        console.log('  - file:', file.name, file.type, file.size)
+
         // 백엔드로 업로드
-        await apiClient.post('/meetings', formData)
+        const response = await apiClient.post('/meetings', formData)
+        console.log('📥 [백엔드] 응답 데이터:', response)
         
         alert('✅ 회의가 성공적으로 업로드되었습니다!')
         router.push('/meetings')
@@ -84,8 +91,15 @@ export default function Home() {
       formData.append('date', new Date().toISOString())
       formData.append('file', blob, 'recording.webm')
 
+      // 디버깅: FormData 내용 확인
+      console.log('📤 [프론트엔드] 녹음 업로드 요청 데이터:')
+      console.log('  - title:', title)
+      console.log('  - date:', new Date().toISOString())
+      console.log('  - blob size:', blob.size, 'bytes')
+
       // 백엔드로 업로드
       const response = await apiClient.post<CreateMeetingResponse>('/meetings', formData)
+      console.log('📥 [백엔드] 응답 데이터:', response)
       const data = (response as any).data || response
 
       alert('✅ 회의가 성공적으로 업로드되었습니다!')

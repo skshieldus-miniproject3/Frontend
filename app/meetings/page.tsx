@@ -7,7 +7,9 @@ import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Mic, Upload, LogOut, Loader2, FileText, Clock, CheckCircle2, ListTodo, ChevronLeft, ChevronRight, Star, Trash2 } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Mic, Upload, LogOut, Loader2, FileText, Clock, CheckCircle2, ListTodo, ChevronLeft, ChevronRight, Star, Trash2, Search, X } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { useMeetings } from "@/hooks/useMeetings"
 import { validateAudioFile } from "@/lib/file-validation"
@@ -20,11 +22,28 @@ export default function MeetingsPage() {
   const pageSize = 5
   const [allMeetings, setAllMeetings] = useState<any[]>([])
   
+  // 검색 상태
+  const [searchKeyword, setSearchKeyword] = useState("")
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [debouncedKeyword, setDebouncedKeyword] = useState("")
+  
+  // 디바운스 적용 (500ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedKeyword(searchKeyword)
+      setCurrentPage(1) // 검색 시 첫 페이지로 이동
+    }, 500)
+    
+    return () => clearTimeout(timer)
+  }, [searchKeyword])
+  
   const { meetings, isLoading, uploadAudioFile, totalPages, toggleFavorite, deleteMeeting } = useMeetings({
     pagination: {
       page: currentPage,
       limit: pageSize
-    }
+    },
+    keyword: debouncedKeyword || undefined,
+    status: statusFilter !== "all" ? statusFilter : undefined
   })
 
   // 전체 회의 목록 가져오기 (즐겨찾기용)
@@ -40,6 +59,19 @@ export default function MeetingsPage() {
   useEffect(() => {
     setAllMeetings(allMeetingsData)
   }, [allMeetingsData])
+  
+  // 검색/필터 초기화
+  const handleResetFilters = () => {
+    setSearchKeyword("")
+    setStatusFilter("all")
+    setCurrentPage(1)
+  }
+  
+  // 상태 필터 변경 시 첫 페이지로 이동
+  const handleStatusFilterChange = (value: string) => {
+    setStatusFilter(value)
+    setCurrentPage(1)
+  }
 
   // 즐겨찾기 항목과 일반 항목 분리
   const favoriteMeetings = useMemo(() => {
@@ -84,8 +116,15 @@ export default function MeetingsPage() {
         formData.append('date', new Date().toISOString())
         formData.append('file', file)
 
+        // 디버깅: FormData 내용 확인
+        console.log('📤 [프론트엔드] 목록에서 업로드 요청 데이터:')
+        console.log('  - title:', title.trim())
+        console.log('  - date:', new Date().toISOString())
+        console.log('  - file:', file.name, file.type, file.size)
+
         // 백엔드로 업로드
         const response = await apiClient.post('/meetings', formData)
+        console.log('📥 [백엔드] 응답 데이터:', response)
         
         alert('✅ 회의가 성공적으로 업로드되었습니다!')
       } catch (error: any) {
@@ -200,6 +239,72 @@ export default function MeetingsPage() {
               />
             </div>
           </div>
+
+          {/* 검색 및 필터 */}
+          <Card className="p-6 shadow-md border-border/50">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                <Input
+                  type="text"
+                  placeholder="제목, 요약, 키워드로 검색..."
+                  value={searchKeyword}
+                  onChange={(e) => setSearchKeyword(e.target.value)}
+                  className="pl-10 pr-10 h-11 text-base"
+                />
+                {searchKeyword && (
+                  <button
+                    onClick={() => setSearchKeyword("")}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              
+              <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
+                <SelectTrigger className="w-full sm:w-[180px] h-11">
+                  <SelectValue placeholder="상태 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">전체</SelectItem>
+                  <SelectItem value="completed">완료</SelectItem>
+                  <SelectItem value="processing">분석 중</SelectItem>
+                  <SelectItem value="uploaded">업로드됨</SelectItem>
+                </SelectContent>
+              </Select>
+              
+              {(searchKeyword || statusFilter !== "all") && (
+                <Button
+                  variant="outline"
+                  onClick={handleResetFilters}
+                  className="h-11 font-semibold"
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  초기화
+                </Button>
+              )}
+            </div>
+            
+            {(debouncedKeyword || statusFilter !== "all") && (
+              <div className="mt-4 pt-4 border-t border-border/50">
+                <p className="text-sm text-muted-foreground">
+                  {debouncedKeyword && (
+                    <span className="mr-4">
+                      🔍 검색어: <span className="font-semibold text-foreground">"{debouncedKeyword}"</span>
+                    </span>
+                  )}
+                  {statusFilter !== "all" && (
+                    <span>
+                      📊 상태: <span className="font-semibold text-foreground">
+                        {statusFilter === "completed" ? "완료" : statusFilter === "processing" ? "분석 중" : "업로드됨"}
+                      </span>
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+          </Card>
 
           {/* Meetings List */}
           {isLoading ? (

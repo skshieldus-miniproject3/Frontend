@@ -13,7 +13,7 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   accessToken: string
-  // refreshToken은 백엔드가 반환하지 않음
+  refreshToken?: string  // 백엔드가 refreshToken 추가함
 }
 
 export interface SignupRequest {
@@ -75,6 +75,7 @@ export interface UpdateMeetingRequest {
   title?: string
   summary?: string
   keywords?: string[]
+  speakers?: Speaker[]  // 화자 정보 수정
 }
 
 export interface UpdateMeetingResponse {
