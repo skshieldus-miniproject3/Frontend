@@ -8,16 +8,16 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Download, ArrowLeft, CheckCircle2, Clock, User, Mic, LogOut, Edit, Save, X, Star, Trash2 } from "lucide-react"
+import { Download, ArrowLeft, CheckCircle2, Clock, User, Mic, LogOut, Edit, Save, X, Star, Trash2, Tag, HelpCircle } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { apiClient } from "@/lib/api"
 import { useMeetings } from "@/hooks/useMeetings"
-import type { Meeting, UpdateMeetingRequest } from "@/types/api"
+import type { Meeting, UpdateMeetingRequest, MeetingFeedback } from "@/types/api"
 
 export default function MeetingDetailPage() {
   const router = useRouter()
   const params = useParams()
-  const { user, logout } = useAuth()
+  const { user, logout, isLoading: authLoading } = useAuth()
   const { toggleFavorite, deleteMeeting } = useMeetings({ autoFetch: false })
   const [meeting, setMeeting] = useState<Meeting | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -33,9 +33,71 @@ export default function MeetingDetailPage() {
   const [editingSpeakerId, setEditingSpeakerId] = useState<string | null>(null)
   const [editingSegmentKey, setEditingSegmentKey] = useState<string | null>(null)
 
+  // AI 피드백 상태
+  const [feedback, setFeedback] = useState<MeetingFeedback | null>(null)
+  const [isFeedbackLoading, setIsFeedbackLoading] = useState(false)
+  const [feedbackError, setFeedbackError] = useState<string | null>(null)
+
+  // Polling 상태
+  const [isPolling, setIsPolling] = useState(false)
+
+  // 인증 체크 - user가 없고 로딩이 끝나면 로그인 페이지로
+  useEffect(() => {
+    if (!authLoading && !user) {
+      console.log('🔒 인증되지 않은 사용자. 로그인 페이지로 이동')
+      router.push('/login')
+    }
+  }, [authLoading, user, router])
+
+  // 피드백 데이터 가져오기
+  const fetchFeedback = async () => {
+    if (!params.id) return
+    
+    try {
+      setIsFeedbackLoading(true)
+      setFeedbackError(null)
+      
+      console.log('🔍 피드백 요청 시작:', `/meetings/${params.id}/feedback`)
+      const response = await apiClient.get<MeetingFeedback>(`/meetings/${params.id}/feedback`)
+      const feedbackData = (response as any).data || response
+      
+      console.log('✅ AI 피드백 데이터 수신:', feedbackData)
+      console.log('  - 액션아이템:', feedbackData?.actionItems?.length || 0)
+      console.log('  - 주제:', feedbackData?.topics?.length || 0)
+      console.log('  - 후속질문 카테고리:', feedbackData?.followUpCategories?.length || 0)
+      
+      setFeedback(feedbackData)
+    } catch (error: any) {
+      console.error('❌ 피드백 조회 실패:')
+      console.error('  - Status:', error.status)
+      console.error('  - Message:', error.message)
+      console.error('  - Full error:', error)
+      
+      // 모든 에러를 조용히 처리 (피드백은 선택적 기능)
+      // 피드백이 아직 생성되지 않았거나 API가 준비되지 않은 경우
+      setFeedbackError(null) // 에러 메시지 표시하지 않음
+      setFeedback(null)
+    } finally {
+      setIsFeedbackLoading(false)
+    }
+  }
+
   useEffect(() => {
     const fetchMeeting = async () => {
+      // 인증이 완료될 때까지 대기
+      if (authLoading) {
+        console.log('⏳ 인증 로딩 중... API 요청 대기')
+        return
+      }
+
+      // 사용자가 없으면 대기 (AuthContext에서 리다이렉트 처리)
+      if (!user) {
+        console.log('❌ 사용자 정보 없음. 대기 중...')
+        return
+      }
+
       try {
+        console.log('🔐 인증 완료! 회의록 데이터 요청 시작')
         const response = await apiClient.get<Meeting>(`/meetings/${params.id}`)
         // 백엔드 응답 구조 확인: response.data 또는 response 직접 사용
         const meetingData = (response as any).data || response
@@ -47,6 +109,7 @@ export default function MeetingDetailPage() {
         
         console.log('📥 회의록 데이터:', meetingData)
         console.log('👥 화자 정보:', meetingData.speakers)
+        console.log('📊 회의 상태:', meetingData.status, '(타입:', typeof meetingData.status, ')')
         
         setMeeting({ ...meetingData, isFavorite })
         // 편집 필드 초기화
@@ -54,6 +117,20 @@ export default function MeetingDetailPage() {
         setEditedSummary(meetingData.summary || "")
         setEditedKeywords(meetingData.keywords?.join(", ") || "")
         setEditedSpeakers(meetingData.speakers || [])  // 화자 정보 초기화
+
+        // 회의가 완료 상태이거나 실패 상태이면 피드백 시도 (API 테스트용)
+        const statusUpper = meetingData.status?.toUpperCase()
+        console.log('🔍 상태 체크:', statusUpper)
+        
+        if (statusUpper === 'COMPLETED' || statusUpper === 'FAILED') {
+          console.log('✅ 피드백 요청 가능 상태! (상태:', meetingData.status, ')')
+          fetchFeedback().catch(error => {
+            // 피드백 조회 실패는 무시 (회의 상세는 정상 표시)
+            console.log('피드백 조회 실패, 계속 진행:', error.message)
+          })
+        } else {
+          console.log('⏳ UPLOADED/PROCESSING 상태. 현재 상태:', meetingData.status)
+        }
       } catch (error) {
         console.error('회의록 상세 정보 가져오기 실패:', error)
       } finally {
@@ -64,7 +141,87 @@ export default function MeetingDetailPage() {
     if (params.id) {
       fetchMeeting()
     }
-  }, [params.id])
+  }, [params.id, authLoading, user])
+
+  // Polling: AI 분석 완료 체크
+  useEffect(() => {
+    if (!meeting || !params.id) return
+
+    const status = meeting.status.toUpperCase()
+    
+    // UPLOADED 또는 PROCESSING 상태일 때만 polling 시작
+    // COMPLETED나 FAILED는 이미 최종 상태이므로 polling 불필요
+    if (status !== 'UPLOADED' && status !== 'PROCESSING') {
+      console.log('🛑 Polling 불필요 (최종 상태):', status)
+      return
+    }
+
+    console.log('🔄 Polling 시작:', meeting.title, status)
+    setIsPolling(true)
+
+    const pollingInterval = setInterval(async () => {
+      try {
+        console.log('📡 분석 상태 확인 중...')
+        const response = await apiClient.checkMeetingStatus()
+        const data = response.completedMeetings || []
+        
+        console.log('📊 미완료 회의 목록:', data)
+
+        // 현재 회의가 목록에 없으면 분석 완료된 것
+        const isStillPending = data.some((m: any) => m.meetingId === params.id)
+        
+        if (!isStillPending) {
+          console.log('✅ 분석 완료! 회의 정보 다시 가져오는 중...')
+          clearInterval(pollingInterval)
+          setIsPolling(false)
+          
+          // 회의 정보 다시 가져오기
+          const meetingResponse = await apiClient.get<Meeting>(`/meetings/${params.id}`)
+          const meetingData = (meetingResponse as any).data || meetingResponse
+          
+          // localStorage에서 즐겨찾기 상태 확인
+          const favoritesStr = localStorage.getItem('favorites')
+          const favorites: string[] = favoritesStr ? JSON.parse(favoritesStr) : []
+          const isFavorite = favorites.includes(params.id as string)
+          
+          setMeeting({ ...meetingData, isFavorite })
+          setEditedTitle(meetingData.title || "")
+          setEditedSummary(meetingData.summary || "")
+          setEditedKeywords(meetingData.keywords?.join(", ") || "")
+          setEditedSpeakers(meetingData.speakers || [])
+
+          // 피드백도 가져오기 (API 테스트용)
+          const statusUpper = meetingData.status?.toUpperCase()
+          console.log('🔄 Polling 후 회의 상태:', meetingData.status, '→', statusUpper)
+          
+          if (statusUpper === 'COMPLETED' || statusUpper === 'FAILED') {
+            console.log('✅ 피드백 요청 가능 상태! (Polling 완료, 상태:', meetingData.status, ')')
+            fetchFeedback().catch(error => {
+              console.log('피드백 조회 실패, 계속 진행:', error.message)
+            })
+          } else {
+            console.log('⚠️ Polling 완료했지만 피드백 요청 안 함. 상태:', meetingData.status)
+          }
+
+          // 상태에 따른 알림
+          if (statusUpper === 'COMPLETED') {
+            alert('✅ 회의 분석이 완료되었습니다!')
+          } else if (statusUpper === 'FAILED') {
+            alert('⚠️ 회의 분석에 실패했습니다. 서버 로그를 확인해주세요.')
+          }
+        }
+      } catch (error) {
+        console.error('❌ Polling 오류:', error)
+      }
+    }, 5000) // 5초마다 체크
+
+    // Cleanup
+    return () => {
+      console.log('🛑 Polling 중지')
+      clearInterval(pollingInterval)
+      setIsPolling(false)
+    }
+  }, [meeting, params.id])
 
   const handleLogout = () => {
     logout()
@@ -180,7 +337,7 @@ export default function MeetingDetailPage() {
   // 화자 이름 수정
   const handleSpeakerNameChange = (speakerId: string, newName: string) => {
     setEditedSpeakers(prev => 
-      prev.map(speaker => 
+      (prev || []).map(speaker => 
         speaker.speakerId === speakerId 
           ? { ...speaker, name: newName }
           : speaker
@@ -191,7 +348,7 @@ export default function MeetingDetailPage() {
   // segment text 수정
   const handleSegmentTextChange = (speakerId: string, segmentIndex: number, newText: string) => {
     setEditedSpeakers(prev =>
-      prev.map(speaker =>
+      (prev || []).map(speaker =>
         speaker.speakerId === speakerId
           ? {
               ...speaker,
@@ -242,7 +399,8 @@ export default function MeetingDetailPage() {
         break
       case "md":
         const keywords = meeting.keywords?.length ? `## 키워드\n${meeting.keywords.map(k => `- ${k}`).join('\n')}\n\n` : ''
-        content = `# ${meeting.title}\n\n**날짜:** ${new Date(meeting.date).toLocaleDateString('ko-KR')}\n\n## 요약\n${meeting.summary || '요약 정보가 없습니다.'}\n\n${keywords}## 원문\n${generateTranscript()}`
+        const dateStr = meeting.date ? new Date(meeting.date).toLocaleDateString('ko-KR') : '날짜 정보 없음'
+        content = `# ${meeting.title}\n\n**날짜:** ${dateStr}\n\n## 요약\n${meeting.summary || '요약 정보가 없습니다.'}\n\n${keywords}## 원문\n${generateTranscript()}`
         filename = `${meeting.title}.md`
         mimeType = "text/markdown"
         break
@@ -285,10 +443,61 @@ export default function MeetingDetailPage() {
     }
   }
 
+  const getRelevanceColor = (relevance: string) => {
+    switch (relevance) {
+      case "HIGH":
+        return "destructive"
+      case "MEDIUM":
+        return "default"
+      case "LOW":
+        return "secondary"
+      default:
+        return "default"
+    }
+  }
+
+  const getCategoryColor = (category: string) => {
+    const colors: { [key: string]: string } = {
+      기술: "bg-blue-500/10 text-blue-700 dark:text-blue-400",
+      비즈니스: "bg-green-500/10 text-green-700 dark:text-green-400",
+      디자인: "bg-purple-500/10 text-purple-700 dark:text-purple-400",
+      QA: "bg-orange-500/10 text-orange-700 dark:text-orange-400",
+      일정: "bg-pink-500/10 text-pink-700 dark:text-pink-400",
+    }
+    return colors[category] || "bg-gray-500/10 text-gray-700 dark:text-gray-400"
+  }
+
+  const getImportanceColor = (importance: '높음' | '중간' | '낮음') => {
+    switch (importance) {
+      case '높음':
+        return 'destructive'
+      case '중간':
+        return 'default'
+      case '낮음':
+        return 'secondary'
+      default:
+        return 'default'
+    }
+  }
+
+  // 인증 로딩 중
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto"></div>
+          <p className="text-muted-foreground">인증 확인 중...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // 사용자 정보 없음
   if (!user) {
     return null
   }
 
+  // 회의록 로딩 중
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -349,6 +558,69 @@ export default function MeetingDetailPage() {
             <ArrowLeft className="w-4 h-4 mr-2" />
             목록으로 돌아가기
           </Button>
+
+          {/* Polling 상태 배너 */}
+          {isPolling && (
+            <Card className="p-4 bg-amber-50 dark:bg-amber-950 border-amber-200 dark:border-amber-800">
+              <div className="flex items-center gap-3">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-amber-600"></div>
+                <div className="flex-1">
+                  <p className="font-semibold text-amber-900 dark:text-amber-100">
+                    🤖 AI 분석 진행 중
+                  </p>
+                  <p className="text-sm text-amber-700 dark:text-amber-300">
+                    회의 내용을 분석하고 있습니다. 완료되면 자동으로 업데이트됩니다. (5초마다 자동 확인)
+                  </p>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* 분석 실패 배너 */}
+          {meeting && meeting.status.toUpperCase() === 'FAILED' && (
+            <Card className="p-4 bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800">
+              <div className="flex items-center gap-3">
+                <div className="w-5 h-5 flex items-center justify-center">
+                  <span className="text-red-600 text-xl">⚠️</span>
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-red-900 dark:text-red-100">
+                    AI 분석 실패
+                  </p>
+                  <p className="text-sm text-red-700 dark:text-red-300">
+                    회의 내용 분석 중 오류가 발생했습니다. 백엔드 서버 로그를 확인해주세요.
+                  </p>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* 디버깅: 피드백 수동 요청 버튼 */}
+          {process.env.NODE_ENV === 'development' && (
+            <Card className="p-4 bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-blue-900 dark:text-blue-100">
+                    🔧 디버깅 모드
+                  </p>
+                  <p className="text-sm text-blue-700 dark:text-blue-300">
+                    회의 상태: <strong>{meeting?.status}</strong>
+                  </p>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    console.log('🔧 수동 피드백 요청')
+                    fetchFeedback()
+                  }}
+                  disabled={isFeedbackLoading}
+                >
+                  {isFeedbackLoading ? '요청 중...' : '피드백 수동 요청'}
+                </Button>
+              </div>
+            </Card>
+          )}
 
           {/* Header */}
           <div className="flex items-center justify-between">
@@ -481,36 +753,164 @@ export default function MeetingDetailPage() {
           )}
 
           {/* Tabs */}
-          <Tabs defaultValue="decisions" className="space-y-4">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="decisions">결정사항</TabsTrigger>
+          <Tabs defaultValue="actions" className="space-y-4">
+            <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
               <TabsTrigger value="actions">액션아이템</TabsTrigger>
+              <TabsTrigger value="topics">주제 분류</TabsTrigger>
+              <TabsTrigger value="questions">후속 질문</TabsTrigger>
               <TabsTrigger value="transcript">원문</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="decisions" className="space-y-4">
-              {meeting.keywords && meeting.keywords.length > 0 ? (
-                <div className="space-y-4">
-                  <h4 className="font-semibold text-lg">주요 키워드</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {meeting.keywords.map((keyword, index) => (
-                      <Badge key={index} variant="secondary" className="px-3 py-1">
-                        {keyword}
-                      </Badge>
-                    ))}
+            <TabsContent value="actions" className="space-y-4">
+              {isFeedbackLoading ? (
+                <Card className="p-6 text-center">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+                    <p className="text-muted-foreground">액션아이템을 불러오는 중...</p>
                   </div>
+                </Card>
+              ) : feedbackError ? (
+                <Card className="p-6 text-center">
+                  <p className="text-destructive">❌ {feedbackError}</p>
+                </Card>
+              ) : feedback && feedback.actionItems.length > 0 ? (
+                <div className="grid gap-4">
+                  {feedback.actionItems
+                    .sort((a, b) => a.orderIndex - b.orderIndex)
+                    .map((item, index) => (
+                      <Card key={index} className="p-6">
+                        <div className="flex items-start gap-4">
+                          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <CheckCircle2 className="w-5 h-5 text-primary" />
+                          </div>
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center gap-3">
+                              <Badge variant="outline" className="text-xs">
+                                #{item.orderIndex}
+                              </Badge>
+                              {item.name && (
+                                <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                                  <User className="w-4 h-4" />
+                                  <span>{item.name}</span>
+                                </div>
+                              )}
+                            </div>
+                            <p className="text-base leading-relaxed">{item.content}</p>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
                 </div>
               ) : (
                 <Card className="p-6 text-center">
-                  <p className="text-muted-foreground">아직 분석이 완료되지 않았습니다.</p>
+                  <p className="text-muted-foreground">아직 액션아이템이 생성되지 않았습니다.</p>
                 </Card>
               )}
             </TabsContent>
 
-            <TabsContent value="actions" className="space-y-4">
-              <Card className="p-6 text-center">
-                <p className="text-muted-foreground">액션아이템 기능은 추후 업데이트 예정입니다.</p>
-              </Card>
+            <TabsContent value="topics" className="space-y-4">
+              {isFeedbackLoading ? (
+                <Card className="p-6 text-center">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+                    <p className="text-muted-foreground">주제를 분석하는 중...</p>
+                  </div>
+                </Card>
+              ) : feedbackError ? (
+                <Card className="p-6 text-center">
+                  <p className="text-destructive">❌ {feedbackError}</p>
+                </Card>
+              ) : feedback && feedback.topics.length > 0 ? (
+                <div className="grid gap-4">
+                  {feedback.topics.map((topic, index) => (
+                    <Card key={index} className="p-6">
+                      <div className="flex items-start gap-4">
+                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <Tag className="w-5 h-5 text-primary" />
+                        </div>
+                        <div className="flex-1 space-y-3">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <h4 className="font-semibold text-lg">{topic.title}</h4>
+                            <Badge variant={getImportanceColor(topic.importance)}>
+                              {topic.importance}
+                            </Badge>
+                          </div>
+                          <p className="text-muted-foreground text-sm">{topic.summary}</p>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 bg-secondary rounded-full h-2 overflow-hidden">
+                              <div
+                                className="h-full bg-primary transition-all"
+                                style={{ width: `${topic.proportion}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-medium text-muted-foreground min-w-[45px] text-right">
+                              {topic.proportion}%
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <Card className="p-6 text-center">
+                  <p className="text-muted-foreground">아직 주제 분류가 생성되지 않았습니다.</p>
+                </Card>
+              )}
+            </TabsContent>
+
+            <TabsContent value="questions" className="space-y-4">
+              {isFeedbackLoading ? (
+                <Card className="p-6 text-center">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+                    <p className="text-muted-foreground">후속 질문을 생성하는 중...</p>
+                  </div>
+                </Card>
+              ) : feedbackError ? (
+                <Card className="p-6 text-center">
+                  <p className="text-destructive">❌ {feedbackError}</p>
+                </Card>
+              ) : feedback && feedback.followUpCategories.length > 0 ? (
+                <div className="space-y-6">
+                  {feedback.followUpCategories.map((category, categoryIndex) => (
+                    <div key={categoryIndex} className="space-y-3">
+                      <div className="flex items-center gap-2 mb-4">
+                        <div className="h-px flex-1 bg-border" />
+                        <h3 className="text-sm font-semibold text-muted-foreground px-3">
+                          {category.category}
+                        </h3>
+                        <div className="h-px flex-1 bg-border" />
+                      </div>
+                      <div className="grid gap-3">
+                        {category.questions
+                          .sort((a, b) => a.orderIndex - b.orderIndex)
+                          .map((question, questionIndex) => (
+                            <Card key={questionIndex} className="p-5">
+                              <div className="flex items-start gap-3">
+                                <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center flex-shrink-0">
+                                  <HelpCircle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                                </div>
+                                <div className="flex-1 space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant="outline" className="text-xs">
+                                      Q{question.orderIndex}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-base leading-relaxed">{question.question}</p>
+                                </div>
+                              </div>
+                            </Card>
+                          ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <Card className="p-6 text-center">
+                  <p className="text-muted-foreground">아직 후속 질문이 생성되지 않았습니다.</p>
+                </Card>
+              )}
             </TabsContent>
 
             <TabsContent value="transcript">

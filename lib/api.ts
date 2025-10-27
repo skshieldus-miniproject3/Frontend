@@ -329,6 +329,40 @@ class ApiClient {
       throw error
     }
   }
+
+  // 회의 분석 진행 상태 조회 (Polling)
+  async checkMeetingStatus(): Promise<any> {
+    try {
+      // Next.js API 라우트를 통해 백엔드 API 호출
+      const url = '/api/meetings/check'
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      }
+      
+      if (this.token) {
+        headers.Authorization = `Bearer ${this.token}`
+      }
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw {
+          message: errorData.message || 'API 요청 실패',
+          status: response.status,
+        } as ApiError
+      }
+
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('회의 분석 상태 조회 중 오류:', error)
+      throw error
+    }
+  }
 }
 
 // API 클라이언트 인스턴스 생성 (실제 백엔드 서버)

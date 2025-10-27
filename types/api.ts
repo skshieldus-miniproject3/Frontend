@@ -38,7 +38,7 @@ export interface Meeting {
   meetingId: string
   title: string
   date?: string  // DetailResponse에만 있음
-  status: 'UPLOADED' | 'PROCESSING' | 'COMPLETED' | 'uploaded' | 'processing' | 'completed'  // 대소문자 둘 다 허용
+  status: 'UPLOADED' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'uploaded' | 'processing' | 'completed' | 'failed'  // 대소문자 둘 다 허용
   summary?: string
   keywords?: string[]  // DetailResponse에만 있음
   speakers?: Speaker[]  // DetailResponse에만 있음
@@ -173,4 +173,47 @@ export interface AiCallbackPayload {
   summary: string
   keywords: string[]
   speakers: Speaker[]
+}
+
+// AI 피드백 타입 (5.1 피드백 조회 API)
+export interface FeedbackActionItem {
+  name: string
+  content: string
+  orderIndex: number
+}
+
+export interface FeedbackTopic {
+  title: string
+  importance: '높음' | '중간' | '낮음'
+  summary: string
+  proportion: number
+}
+
+export interface FeedbackQuestion {
+  question: string
+  orderIndex: number
+}
+
+export interface FeedbackFollowUpCategory {
+  category: string
+  questions: FeedbackQuestion[]
+}
+
+export interface MeetingFeedback {
+  meetingId: string
+  actionItems: FeedbackActionItem[]
+  topics: FeedbackTopic[]
+  followUpCategories: FeedbackFollowUpCategory[]
+}
+
+// 회의 분석 진행 상태 조회 (Polling)
+export interface PendingMeeting {
+  meetingId: string
+  title: string
+  status: 'UPLOADED' | 'PROCESSING'
+  createdAt: string
+}
+
+export interface CheckMeetingStatusResponse {
+  completedMeetings: PendingMeeting[]
 }
