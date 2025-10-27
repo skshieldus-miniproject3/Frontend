@@ -408,7 +408,7 @@ export default function MeetingsPage() {
                               <div className="flex items-center gap-2">
                                 <Clock className="w-4 h-4" />
                                 <span>
-                                  {meeting.date && new Date(meeting.date).toLocaleDateString("ko-KR", {
+                                  {new Date(meeting.date || meeting.createdAt).toLocaleDateString("ko-KR", {
                                     year: "numeric",
                                     month: "long",
                                     day: "numeric",
@@ -507,7 +507,7 @@ export default function MeetingsPage() {
                         <div className="flex items-center gap-2">
                           <Clock className="w-4 h-4" />
                           <span>
-                            {new Date(meeting.date).toLocaleDateString("ko-KR", {
+                            {new Date(meeting.date || meeting.createdAt).toLocaleDateString("ko-KR", {
                               year: "numeric",
                               month: "long",
                               day: "numeric",
